@@ -69,28 +69,34 @@ def cargar_csv_predeterminado():
     data = pd.read_csv(url)
     return data
 
+# Verificar si ya cargamos el CSV y si el mapa ya existe en la sesión
+if "data" not in st.session_state:
+    st.session_state.data = None
+    st.session_state.mapa = None
+
 # Botón para cargar el CSV
 if st.button("Usar csv predeterminado"):
     try:
-        data = cargar_csv_predeterminado()
-        if "Direccion" not in data.columns:
+        # Cargar datos CSV
+        st.session_state.data = cargar_csv_predeterminado()
+        if "Direccion" not in st.session_state.data.columns:
             st.error("❌ El archivo CSV no contiene una columna llamada 'Direccion'.")
         else:
+            # Procesar las direcciones
             calles_df = obtener_calles_conchali()
-            data["direccion_corregida"] = data["Direccion"].apply(lambda x: corregir_direccion(x, calles_df))
-            data["coords"] = data["direccion_corregida"].apply(obtener_coords)
-            data = data.dropna(subset=["coords"])
+            st.session_state.data["direccion_corregida"] = st.session_state.data["Direccion"].apply(lambda x: corregir_direccion(x, calles_df))
+            st.session_state.data["coords"] = st.session_state.data["direccion_corregida"].apply(obtener_coords)
+            st.session_state.data = st.session_state.data.dropna(subset=["coords"])
 
             st.markdown("### ✅ Direcciones encontradas:")
-            st.dataframe(data[["Direccion", "direccion_corregida"]])
+            st.dataframe(st.session_state.data[["Direccion", "direccion_corregida"]])
 
-            # Mapa
-            mapa = folium.Map(location=[-33.38, -70.65], zoom_start=13)
-            for i, row in data.iterrows():
-                folium.Marker(location=row["coords"], popup=row["direccion_corregida"]).add_to(mapa)
-            
-            # Guardar mapa en session_state para mantenerlo entre actualizaciones
-            st.session_state.mapa = mapa
+            # Crear el mapa solo si no existe en la sesión
+            if st.session_state.mapa is None:
+                mapa = folium.Map(location=[-33.38, -70.65], zoom_start=13)
+                for i, row in st.session_state.data.iterrows():
+                    folium.Marker(location=row["coords"], popup=row["direccion_corregida"]).add_to(mapa)
+                st.session_state.mapa = mapa
 
             st.markdown("### 🗺️ Mapa con direcciones corregidas")
             st_folium(st.session_state.mapa, width=700, height=500)
@@ -110,11 +116,11 @@ if direccion_input:
     if coords:
         st.write(f"Ubicación aproximada: {coords[0]}, {coords[1]}")
 
-        # Mapa
+        # Crear un mapa para la dirección manual
         mapa = folium.Map(location=coords, zoom_start=15)
         folium.Marker(location=coords, popup=direccion_corregida).add_to(mapa)
         
-        # Guardar mapa en session_state para mantenerlo entre actualizaciones
+        # Guardar el mapa en la sesión
         st.session_state.mapa = mapa
 
         st.markdown("### 🗺️ Mapa con la dirección corregida")
