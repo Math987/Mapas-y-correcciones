@@ -6,3 +6,4 @@ fuzzywuzzy
 unidecode
 geopy
 folium
+streamlit-folium
