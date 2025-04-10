@@ -60,38 +60,29 @@ def obtener_coords(direccion):
         return None
     return None
 
-# 2. Leer desde el CSV de Google Sheets
-st.markdown("### 📑 URL del Google Sheet")
-sheet_url = st.text_input("Pega aquí la URL del Google Sheet que contiene la columna 'direccion':")
+# 2. Ingresar dirección manualmente
+direccion_input = st.text_input("Ingresa una dirección (ej: Tres Ote. 5317):")
 
-if sheet_url:
+# 3. Usar csv predeterminado
+def cargar_csv_predeterminado():
+    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR1sj1BfL4P6_EO0EGhN2e2qeQA78Rmvl0s7nGhrlGnEBo7ZCa6OrJL1B0gF_JoaiMEpqmtap7WfzxI/pub?gid=0&single=true&output=csv"
+    data = pd.read_csv(url)
+    return data
+
+# Botón para cargar el CSV
+if st.button("Usar csv predeterminado"):
     try:
-        # Leer el CSV directamente desde la URL pública
-        data = pd.read_csv(sheet_url)
-
-        # Verificar que la columna 'direccion' esté presente en los datos
-        if "direccion" not in data.columns:
-            st.error("❌ La hoja no contiene una columna llamada 'direccion'.")
+        data = cargar_csv_predeterminado()
+        if "Direccion" not in data.columns:
+            st.error("❌ El archivo CSV no contiene una columna llamada 'Direccion'.")
         else:
-            # Obtener las calles oficiales de Conchalí
             calles_df = obtener_calles_conchali()
-
-            # Corregir direcciones y obtener coordenadas
-            data["direccion_corregida"] = data["direccion"].apply(lambda x: corregir_direccion(x, calles_df))
+            data["direccion_corregida"] = data["Direccion"].apply(lambda x: corregir_direccion(x, calles_df))
             data["coords"] = data["direccion_corregida"].apply(obtener_coords)
-
-            # Eliminar las filas sin coordenadas
             data = data.dropna(subset=["coords"])
 
-            # Mostrar las direcciones corregidas
             st.markdown("### ✅ Direcciones encontradas:")
-            st.dataframe(data[["direccion", "direccion_corregida"]])
-
-            # Mostrar las direcciones originales y corregidas en formato de texto antes del mapa
-            for index, row in data.iterrows():
-                st.markdown(f"#### Dirección original: {row['direccion']}")
-                st.markdown(f"#### Dirección corregida: {row['direccion_corregida']}")
-                st.markdown("### Ubicación aproximada:")
+            st.dataframe(data[["Direccion", "direccion_corregida"]])
 
             # Mapa
             mapa = folium.Map(location=[-33.38, -70.65], zoom_start=13)
@@ -101,3 +92,24 @@ if sheet_url:
             st_folium(mapa, width=700, height=500)
     except Exception as e:
         st.error(f"⚠️ Error: {str(e)}")
+
+# 4. Procesar dirección manual
+if direccion_input:
+    calles_df = obtener_calles_conchali()
+    direccion_corregida = corregir_direccion(direccion_input, calles_df)
+    coords = obtener_coords(direccion_corregida)
+
+    st.markdown("### ✅ Dirección corregida:")
+    st.write(f"Dirección original: {direccion_input}")
+    st.write(f"Dirección corregida: {direccion_corregida}")
+
+    if coords:
+        st.write(f"Ubicación aproximada: {coords[0]}, {coords[1]}")
+
+        # Mapa
+        mapa = folium.Map(location=coords, zoom_start=15)
+        folium.Marker(location=coords, popup=direccion_corregida).add_to(mapa)
+        st.markdown("### 🗺️ Mapa con la dirección corregida")
+        st_folium(mapa, width=700, height=500)
+    else:
+        st.write("No se pudo obtener la ubicación para la dirección corregida.")
