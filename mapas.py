@@ -87,6 +87,12 @@ if sheet_url:
             st.markdown("### ✅ Direcciones encontradas:")
             st.dataframe(data[["direccion", "direccion_corregida"]])
 
+            # Mostrar las direcciones originales y corregidas en formato de texto antes del mapa
+            for index, row in data.iterrows():
+                st.markdown(f"#### Dirección original: {row['direccion']}")
+                st.markdown(f"#### Dirección corregida: {row['direccion_corregida']}")
+                st.markdown("### Ubicación aproximada:")
+
             # Mapa
             mapa = folium.Map(location=[-33.38, -70.65], zoom_start=13)
             for i, row in data.iterrows():
