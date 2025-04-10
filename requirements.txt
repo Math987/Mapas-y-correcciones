@@ -1,9 +1,12 @@
 streamlit
-beautifulsoup4
-requests
 pandas
-fuzzywuzzy
+requests
+beautifulsoup4
 unidecode
+fuzzywuzzy
+python-Levenshtein
 geopy
 folium
 streamlit-folium
+gspread
+oauth2client
