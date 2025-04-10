@@ -9,9 +9,18 @@ from geopy.geocoders import Nominatim
 import folium
 from streamlit_folium import st_folium
 
-# -----------------------------
-# Funciones
-# -----------------------------
+# 1. Funciones auxiliares
+
+@st.cache_data
+def obtener_calles_conchali():
+    url = "https://codigo-postal.co/chile/santiago/calles-de-conchali/"
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, "html.parser")
+    ul_cities = soup.find("ul", class_="cities")
+    li_items = ul_cities.find_all("li")
+    calles = [li.find("a").text.strip() for li in li_items]
+    return pd.DataFrame(calles, columns=["Calle"])
+
 def normalizar(texto):
     texto = unidecode(str(texto)).upper()
     texto = re.sub(r'[^\w\s0-9]', '', texto)
@@ -26,78 +35,63 @@ def corregir_direccion(direccion_input, calles_df, umbral=80):
     else:
         direccion_texto = direccion_input.strip()
         numero_direccion = ""
-
     entrada_norm = normalizar(direccion_texto)
-    mejor_match = process.extractOne(entrada_norm, calles_df["normalizado"], scorer=fuzz.token_set_ratio)
-
+    mejor_match = process.extractOne(
+        entrada_norm, 
+        calles_df["normalizado"], 
+        scorer=fuzz.token_set_ratio
+    )
     if mejor_match and mejor_match[1] >= umbral:
         idx = calles_df["normalizado"] == mejor_match[0]
         direccion_corregida = calles_df.loc[idx, "original"].values[0]
     else:
-        return None  # Marcar como no encontrada
-
+        direccion_corregida = direccion_texto
     return direccion_corregida + (" " + numero_direccion if numero_direccion else "")
 
-@st.cache_data(show_spinner=False)
-def obtener_callejero():
-    url = "https://codigo-postal.co/chile/santiago/calles-de-conchali/"
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, "html.parser")
-    ul_cities = soup.find("ul", class_="cities")
-    li_items = ul_cities.find_all("li")
-    calles = [li.find("a").text.strip() for li in li_items]
-    df_calles = pd.DataFrame({
-        "original": calles,
-        "normalizado": [normalizar(c) for c in calles]
-    })
-    return df_calles
-
-@st.cache_data(show_spinner=False)
-def geolocalizar_direccion(direccion):
-    geolocator = Nominatim(user_agent="app_conchali", timeout=3)
+def geolocalizar(direccion):
+    geolocator = Nominatim(user_agent="direccion_conchali_app")
     try:
         location = geolocator.geocode(f"{direccion}, Conchalí, Chile")
         if location:
             return location.latitude, location.longitude
     except:
-        return None
-    return None
+        return None, None
+    return None, None
 
-# -----------------------------
-# App
-# -----------------------------
-st.title("Corrector y Mapeador de Direcciones - Conchalí")
+# 2. Cargar base de calles
+df_calles_conchali = obtener_calles_conchali()
+calles_conchali = df_calles_conchali["Calle"].tolist()
+df_calles = pd.DataFrame({
+    "original": calles_conchali,
+    "normalizado": [normalizar(c) for c in calles_conchali]
+})
 
-# Input de usuario
-input_direcciones = st.text_area("Ingresa direcciones separadas por línea:", height=200)
-direcciones = [line.strip() for line in input_direcciones.strip().split("\n") if line.strip()]
+# 3. Interfaz de usuario
+st.title("Corrección de direcciones en Conchalí")
 
-if st.button("Corregir y Geolocalizar") and direcciones:
-    df_calles = obtener_callejero()
-    df = pd.DataFrame(direcciones, columns=["Direccion_Original"])
-    df["Direccion_Corregida"] = df["Direccion_Original"].apply(lambda x: corregir_direccion(x, df_calles, umbral=80))
+direccion_input = st.text_input("Ingresa una dirección (ej: Tres Ote. 5317):", key="direccion_input")
 
-    st.subheader("Direcciones Corregidas")
-    st.dataframe(df)
+if st.button("Corregir y ubicar"):
+    direccion_corregida = corregir_direccion(direccion_input, df_calles)
+    lat, lon = geolocalizar(direccion_corregida)
 
-    # Informe de no encontradas
-    no_encontradas = df[df["Direccion_Corregida"].isnull()]["Direccion_Original"].tolist()
-    if no_encontradas:
-        st.warning("Direcciones no encontradas:")
-        st.write(no_encontradas)
+    st.session_state["resultado"] = {
+        "original": direccion_input,
+        "corregida": direccion_corregida,
+        "lat": lat,
+        "lon": lon
+    }
 
-    # Mapa con las encontradas
-    st.subheader("Mapa de Direcciones Corregidas")
-    mapa = folium.Map(location=[-33.381, -70.678], zoom_start=13)
-    for _, row in df.dropna().iterrows():
-        geo = geolocalizar_direccion(row["Direccion_Corregida"])
-        if geo:
-            folium.Marker(
-                location=geo,
-                popup=row["Direccion_Corregida"],
-                icon=folium.Icon(color="blue")
-            ).add_to(mapa)
+# 4. Mostrar resultados guardados
+if "resultado" in st.session_state:
+    resultado = st.session_state["resultado"]
+    st.write("**Dirección original:**", resultado["original"])
+    st.write("**Dirección corregida:**", resultado["corregida"])
 
-    st_folium(mapa, width=700, height=500)
-else:
-    st.info("Ingresa algunas direcciones para comenzar.")
+    if resultado["lat"] and resultado["lon"]:
+        st.write("**Ubicación aproximada:**")
+        m = folium.Map(location=[resultado["lat"], resultado["lon"]], zoom_start=17)
+        folium.Marker([resultado["lat"], resultado["lon"]], tooltip=resultado["corregida"]).add_to(m)
+        st_folium(m, width=700, height=500)
+    else:
+        st.warning("No se encontró ubicación para la dirección corregida.")
