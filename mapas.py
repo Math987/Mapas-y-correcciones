@@ -9,8 +9,6 @@ from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderUnavailable
 import folium
 from streamlit_folium import st_folium
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 
 # Configuración
 st.set_page_config(page_title="Mapa de Direcciones Corregidas", layout="wide")
@@ -62,30 +60,33 @@ def obtener_coords(direccion):
         return None
     return None
 
-# 2. Leer desde Google Sheets
+# 2. Leer desde el CSV de Google Sheets
 st.markdown("### 📑 URL del Google Sheet")
 sheet_url = st.text_input("Pega aquí la URL del Google Sheet que contiene la columna 'direccion':")
 
 if sheet_url:
     try:
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-        client = gspread.authorize(creds)
-        sheet_id = sheet_url.split("/d/")[1].split("/")[0]
-        sheet = client.open_by_key(sheet_id).sheet1
-        data = pd.DataFrame(sheet.get_all_records())
-        
+        # Leer el CSV directamente desde la URL pública
+        data = pd.read_csv(sheet_url)
+
+        # Verificar que la columna 'direccion' esté presente en los datos
         if "direccion" not in data.columns:
             st.error("❌ La hoja no contiene una columna llamada 'direccion'.")
         else:
+            # Obtener las calles oficiales de Conchalí
             calles_df = obtener_calles_conchali()
+
+            # Corregir direcciones y obtener coordenadas
             data["direccion_corregida"] = data["direccion"].apply(lambda x: corregir_direccion(x, calles_df))
             data["coords"] = data["direccion_corregida"].apply(obtener_coords)
+
+            # Eliminar las filas sin coordenadas
             data = data.dropna(subset=["coords"])
-            
+
+            # Mostrar las direcciones corregidas
             st.markdown("### ✅ Direcciones encontradas:")
             st.dataframe(data[["direccion", "direccion_corregida"]])
-            
+
             # Mapa
             mapa = folium.Map(location=[-33.38, -70.65], zoom_start=13)
             for i, row in data.iterrows():
