@@ -88,8 +88,12 @@ if st.button("Usar csv predeterminado"):
             mapa = folium.Map(location=[-33.38, -70.65], zoom_start=13)
             for i, row in data.iterrows():
                 folium.Marker(location=row["coords"], popup=row["direccion_corregida"]).add_to(mapa)
+            
+            # Guardar mapa en session_state para mantenerlo entre actualizaciones
+            st.session_state.mapa = mapa
+
             st.markdown("### 🗺️ Mapa con direcciones corregidas")
-            st_folium(mapa, width=700, height=500)
+            st_folium(st.session_state.mapa, width=700, height=500)
     except Exception as e:
         st.error(f"⚠️ Error: {str(e)}")
 
@@ -109,7 +113,11 @@ if direccion_input:
         # Mapa
         mapa = folium.Map(location=coords, zoom_start=15)
         folium.Marker(location=coords, popup=direccion_corregida).add_to(mapa)
+        
+        # Guardar mapa en session_state para mantenerlo entre actualizaciones
+        st.session_state.mapa = mapa
+
         st.markdown("### 🗺️ Mapa con la dirección corregida")
-        st_folium(mapa, width=700, height=500)
+        st_folium(st.session_state.mapa, width=700, height=500)
     else:
         st.write("No se pudo obtener la ubicación para la dirección corregida.")
