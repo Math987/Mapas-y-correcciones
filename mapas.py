@@ -16,27 +16,23 @@ import traceback
 st.set_page_config(page_title="Mapa de Direcciones Corregidas", layout="wide")
 st.title("🗺️ Mapa de Direcciones Corregidas en Conchalí")
 
-# --- Paleta de Colores para Marcadores ---
-# REVISA Y AJUSTA ESTOS COLORES Y CLAVES A TUS DATOS
-COLOR_MAP = {
-    "RESIDENCIAL": "blue",      # Azul para Residencial
-    "COMERCIAL": "green",       # Verde para Comercial
-    "BODEGA": "orange",         # Naranja para Bodega
-    "EDUCACIONAL": "purple",    # Morado para Educacional
-    "SALUD": "red",             # Rojo para Salud
-    "AREA VERDE": "darkgreen",  # Verde oscuro para Área Verde
-    "OFICINA": "cadetblue",     # Azul cadete para Oficina
-    # --- Añade más categorías ---
-    "OTRO": "gray",             # Gris para Otro
-    "DESCONOCIDO": "lightgray", # Gris claro para Desconocido/Vacío
-}
-# REVISA QUE ESTE COLOR SEA VÁLIDO
-DEFAULT_COLOR = "black" # Negro para tipos no encontrados en COLOR_MAP
+# --- Paleta de Colores Base para Asignación Dinámica ---
+# Lista de colores válidos y distinguibles para asignar a las categorías
+# Puedes añadir o quitar colores de esta lista
+BASE_COLOR_PALETTE = [
+    'blue', 'green', 'purple', 'orange', 'darkred', 'cadetblue',
+    'darkgreen', 'pink', 'red', 'lightblue', 'darkpurple', 'beige'
+]
+# Color específico para la categoría 'DESCONOCIDO' si existe
+COLOR_DESCONOCIDO = 'lightgray'
+# Color de fallback si ocurre algún error inesperado en la asignación
+DEFAULT_ASSIGN_COLOR = 'black'
+
 
 # --- Funciones (sin cambios respecto a la versión anterior) ---
 @st.cache_data
 def obtener_calles_conchali():
-    # ... (código función) ...
+    # ... (código función sin cambios) ...
     """Obtiene la lista de calles oficiales de Conchalí desde una fuente web."""
     url = "https://codigo-postal.co/chile/santiago/calles-de-conchali/"
     try:
@@ -55,7 +51,7 @@ def obtener_calles_conchali():
 
         df_calles_conchali = pd.DataFrame(calles, columns=["Calle"])
         df_calles_conchali["normalizado"] = df_calles_conchali["Calle"].apply(normalizar)
-        print(f"Calles oficiales cargadas: {len(df_calles_conchali)}") # Info en consola
+        # print(f"Calles oficiales cargadas: {len(df_calles_conchali)}") # Info en consola
         return df_calles_conchali
     except requests.exceptions.RequestException as e:
         st.error(f"Error al obtener las calles desde la URL: {e}")
@@ -65,7 +61,7 @@ def obtener_calles_conchali():
         return pd.DataFrame(columns=["Calle", "normalizado"])
 
 def normalizar(texto):
-    # ... (código función) ...
+    # ... (código función sin cambios) ...
     """Normaliza el texto: quita acentos, convierte a mayúsculas, elimina no alfanuméricos (excepto espacios) y espacios extra."""
     try:
         texto = unidecode(str(texto)).upper()
@@ -77,7 +73,7 @@ def normalizar(texto):
         return str(texto).upper().strip() # Fallback simple
 
 def corregir_direccion(direccion_input, calles_df, umbral=80):
-    # ... (código función con debug print) ...
+    # ... (código función sin cambios, el debug print es opcional ahora) ...
     """Intenta corregir el nombre de la calle usando fuzzy matching contra la lista oficial."""
     original_completa = str(direccion_input).strip()
     match = re.match(r"(.*?)(\s*\d+)$", original_completa)
@@ -106,29 +102,30 @@ def corregir_direccion(direccion_input, calles_df, umbral=80):
                 if idx.any():
                     direccion_corregida_texto = calles_df.loc[idx, "Calle"].values[0]
                 else:
-                    print(f"WARN: Match '{mejor_match[0]}' no encontrado en índice df original.")
+                    # print(f"WARN: Match '{mejor_match[0]}' no encontrado en índice df original.")
                     mejor_match = None
         except Exception as e:
             print(f"ERROR en fuzzywuzzy o indexación para '{entrada_norm}': {e}")
             mejor_match = None
 
-    score_txt = f"Score: {mejor_match[1]}" if (mejor_match and mejor_match[1] >= umbral) else f"Score: {mejor_match[1] if mejor_match else 'N/A'}"
-    if direccion_corregida_texto.upper() != direccion_texto.upper():
-        print(f"DEBUG CORRECCION: '{direccion_texto}' -> '{direccion_corregida_texto}' ({score_txt})")
-    else:
-        print(f"DEBUG CORRECCION: '{direccion_texto}' -> NO CORREGIDO ({score_txt})")
+    # score_txt = f"Score: {mejor_match[1]}" if (mejor_match and mejor_match[1] >= umbral) else f"Score: {mejor_match[1] if mejor_match else 'N/A'}"
+    # if direccion_corregida_texto.upper() != direccion_texto.upper():
+    #     print(f"DEBUG CORRECCION: '{direccion_texto}' -> '{direccion_corregida_texto}' ({score_txt})")
+    # else:
+    #     print(f"DEBUG CORRECCION: '{direccion_texto}' -> NO CORREGIDO ({score_txt})")
 
     direccion_final = direccion_corregida_texto + (" " + numero_direccion if numero_direccion else "")
     return direccion_final.strip()
 
+
 @st.cache_data(ttl=3600)
 def obtener_coords(direccion_corregida_completa):
-    # ... (código función) ...
+    # ... (código función sin cambios) ...
     """Obtiene coordenadas (lat, lon) para una dirección en Conchalí usando Nominatim."""
     if not direccion_corregida_completa:
         return None
     direccion_query = f"{direccion_corregida_completa}, Conchalí, Región Metropolitana, Chile"
-    geolocator = Nominatim(user_agent=f"mapa_conchali_app_v4_{int(time.time())}", timeout=10)
+    geolocator = Nominatim(user_agent=f"mapa_conchali_app_v5_{int(time.time())}", timeout=10)
     try:
         location = geolocator.geocode(direccion_query, addressdetails=True)
         if location:
@@ -144,7 +141,7 @@ def obtener_coords(direccion_corregida_completa):
         return None
 
 def cargar_csv_predeterminado():
-    # ... (código función con procesamiento de 'Que es') ...
+    # ... (código función con procesamiento de 'Que es' - sin cambios) ...
     """Carga los datos desde la URL y prepara la columna 'Que es'."""
     url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR1sj1BfL4P6_EO0EGhN2e2qeQA78Rmvl0s7nGhrlGnEBo7ZCa6OrJL1B0gF_JoaiMEpqmtap7WfzxI/pub?gid=0&single=true&output=csv"
     try:
@@ -158,7 +155,7 @@ def cargar_csv_predeterminado():
             data["Que es"] = data["Que es"].fillna("DESCONOCIDO").astype(str).str.strip().str.upper()
             data["Que es"] = data["Que es"].replace(r'^\s*$', 'DESCONOCIDO', regex=True)
         else:
-            st.warning("Columna 'Que es' no encontrada en el CSV. Se asignará 'DESCONOCIDO' a todos los puntos.")
+            st.warning("Columna 'Que es' no encontrada en el CSV. Se asignará 'DESCONOCIDO'.")
             data["Que es"] = "DESCONOCIDO"
         return data
     except Exception as e:
@@ -167,7 +164,7 @@ def cargar_csv_predeterminado():
         return None
 
 # --- Inicialización del Estado de Sesión ---
-# ... (sin cambios) ...
+# (Sin cambios)
 if "data" not in st.session_state:
     st.session_state.data = None
 if "mapa_csv" not in st.session_state:
@@ -179,89 +176,113 @@ if "mostrar_mapa" not in st.session_state:
 
 # --- Carga de Datos Estáticos (Calles Oficiales) ---
 calles_df = obtener_calles_conchali()
-# ... (sin cambios) ...
+# (Verificación sin cambios)
 if calles_df.empty:
-    st.error("No se pudieron cargar las calles oficiales. La corrección de direcciones no funcionará.")
+    st.error("No se pudieron cargar las calles oficiales.")
 
 # --- Widgets de Entrada ---
-# ... (sin cambios) ...
+# (Sin cambios)
 direccion_input = st.text_input("Ingresa una dirección (ej: Tres Ote. 5317):", key="direccion_manual_key")
 usar_csv_button = st.button("Usar csv predeterminado")
 
 # --- Lógica Principal ---
+
 if usar_csv_button:
-    # ... (limpieza de estado, carga de CSV, corrección, obtención de coords - sin cambios) ...
     st.session_state.mapa_manual = None
     st.session_state.mostrar_mapa = None
     st.info("Procesando CSV predeterminado...")
+
     try:
+        # 1. Cargar datos CSV (ya incluye la preparación de 'Que es')
         data_cargada = cargar_csv_predeterminado()
+
         if data_cargada is not None and not data_cargada.empty:
             st.session_state.data = data_cargada
+
+            # --- Inicio: Generación Dinámica de Mapa de Colores ---
+            dynamic_color_map = {}
+            if "Que es" in st.session_state.data.columns:
+                unique_types = sorted(list(st.session_state.data["Que es"].unique())) # Ordenar para consistencia
+                palette_len = len(BASE_COLOR_PALETTE)
+                color_index = 0
+
+                # Asignar color específico a DESCONOCIDO primero
+                if "DESCONOCIDO" in unique_types:
+                    dynamic_color_map["DESCONOCIDO"] = COLOR_DESCONOCIDO
+
+                # Asignar colores del resto de la paleta
+                for utype in unique_types:
+                    if utype not in dynamic_color_map: # Si no es DESCONOCIDO (ya asignado)
+                        dynamic_color_map[utype] = BASE_COLOR_PALETTE[color_index % palette_len]
+                        color_index += 1
+
+                st.write("Categorías encontradas y colores asignados:")
+                st.json(dynamic_color_map) # Mostrar el mapeo generado
+            else:
+                 st.warning("No se generó mapa de colores porque falta la columna 'Que es'.")
+            # --- Fin: Generación Dinámica de Mapa de Colores ---
+
+
+            # 2. Corregir direcciones
             st.session_state.data = st.session_state.data.dropna(subset=["Direccion"])
-            st.session_state.data["Direccion"] = st.session_state.data["Direccion"].astype(str)
             st.session_state.data["direccion_corregida"] = st.session_state.data["Direccion"].apply(
                 lambda x: corregir_direccion(x, calles_df)
             )
+
+            # Mostrar tabla
             st.markdown("### Datos cargados y corregidos (CSV):")
             display_cols = ["Direccion", "direccion_corregida"]
             if "Que es" in st.session_state.data.columns:
                  display_cols.append("Que es")
             st.dataframe(st.session_state.data[display_cols].head(20))
-            if len(st.session_state.data) > 20:
-                st.caption(f"... y {len(st.session_state.data) - 20} más.")
+            if len(st.session_state.data) > 20: st.caption(f"... y {len(st.session_state.data) - 20} más.")
+
+
+            # 3. Obtener coordenadas
             with st.spinner("Obteniendo coordenadas del CSV..."):
                  st.session_state.data = st.session_state.data.dropna(subset=["direccion_corregida"])
                  st.session_state.data["coords"] = st.session_state.data["direccion_corregida"].apply(
                      lambda x: obtener_coords(x)
                  )
+
+            # 4. Filtrar filas sin coordenadas
             original_rows = len(st.session_state.data)
             st.session_state.data = st.session_state.data.dropna(subset=["coords"])
             found_rows = len(st.session_state.data)
-            st.success(f"Se encontraron coordenadas para {found_rows} de {original_rows} direcciones procesadas.")
+            st.success(f"Se encontraron coordenadas para {found_rows} de {original_rows} direcciones.")
+
 
             if not st.session_state.data.empty:
-                # --- Creación del Mapa y Marcadores ---
+                 # 5. Crear el mapa CON COLORES DINÁMICOS
                 mapa_obj = folium.Map(location=[-33.38, -70.65], zoom_start=13)
                 coords_agregadas = 0
-                tipos_en_mapa = set()
+                tipos_en_mapa = set() # Para la leyenda
 
-                # ----- INICIO BUCLE DE MARCADORES -----
                 for i, row in st.session_state.data.iterrows():
                     try:
-                        # --- Obtener tipo y determinar color ---
-                        tipo = str(row.get("Que es", "DESCONOCIDO")).upper()
-                        marker_color = COLOR_MAP.get(tipo, DEFAULT_COLOR) # Usar .get para fallback seguro
+                        # --- Determinar tipo y color usando el mapa DINÁMICO ---
+                        tipo = str(row.get("Que es", "DESCONOCIDO")).upper() # Ya debería estar en mayúsculas por carga
+                        # Usar el mapa dinámico generado, con fallback por si acaso
+                        marker_color = dynamic_color_map.get(tipo, DEFAULT_ASSIGN_COLOR)
                         tipos_en_mapa.add(tipo)
-                        # --- FIN obtener tipo y determinar color ---
+                        # --- Fin determinar tipo y color ---
 
-                        # --- Crear textos para popup y tooltip ---
                         popup_text = f"<b>Tipo:</b> {tipo.capitalize()}<br><b>Corregida:</b> {row['direccion_corregida']}<br><b>Original:</b> {row['Direccion']}"
                         tooltip_text = f"{row['direccion_corregida']} ({tipo.capitalize()})"
-                        # --- FIN crear textos ---
 
-                        # --- *** DEBUG PRINT *** ---
-                        # Revisa la consola donde ejecutaste Streamlit para ver estos mensajes
-                        print(f"DEBUG MARKER: Tipo='{tipo}', Color asignado='{marker_color}', Coords={row['coords']}")
-                        # --- *** FIN DEBUG PRINT *** ---
-
-                        # --- *** CREACIÓN DEL MARCADOR CON ICONO COLOREADO *** ---
+                        # --- Crear marcador con el color dinámico ---
                         folium.Marker(
                             location=row["coords"],
                             popup=folium.Popup(popup_text, max_width=300),
                             tooltip=tooltip_text,
-                            # ESTA es la línea clave para el color del pin:
                             icon=folium.Icon(color=marker_color, icon='info-sign')
                         ).add_to(mapa_obj)
-                        # --- *** FIN CREACIÓN DEL MARCADOR *** ---
-
                         coords_agregadas += 1
                     except Exception as marker_err:
                          st.warning(f"No se pudo añadir marcador para {row.get('direccion_corregida','N/A')} en {row.get('coords','N/A')}: {marker_err}")
-                # ----- FIN BUCLE DE MARCADORES -----
 
                 if coords_agregadas > 0:
-                    # --- Añadir Leyenda (sin cambios) ---
+                    # --- Añadir Leyenda (Usa el mapa dinámico) ---
                     legend_html = """
                         <div style="position: fixed;
                                     bottom: 50px; left: 10px; width: 180px; height: auto; max-height: 250px;
@@ -272,34 +293,39 @@ if usar_csv_button:
                         <b style="font-size: 14px;">Leyenda de Tipos</b><br>
                     """
                     colores_usados_para_leyenda = {}
+                    # Iterar sobre los tipos encontrados en el mapa, ordenados
                     for tipo_leg in sorted(list(tipos_en_mapa)):
-                        color_leg = COLOR_MAP.get(tipo_leg, DEFAULT_COLOR)
+                        # Obtener color del mapa dinámico
+                        color_leg = dynamic_color_map.get(tipo_leg, DEFAULT_ASSIGN_COLOR)
                         if color_leg not in colores_usados_para_leyenda:
                              colores_usados_para_leyenda[color_leg] = tipo_leg
                              legend_html += f'<i style="background:{color_leg}; border-radius:50%; width: 12px; height: 12px; display: inline-block; margin-right: 6px; border: 1px solid #CCC;"></i>{tipo_leg.capitalize()}<br>'
+
                     legend_html += "</div>"
                     mapa_obj.get_root().html.add_child(folium.Element(legend_html))
                     # --- Fin Leyenda ---
 
                     st.session_state.mapa_csv = mapa_obj
                     st.session_state.mostrar_mapa = 'csv'
-                    st.success(f"Mapa del CSV generado con {coords_agregadas} puntos coloreados y leyenda.")
+                    st.success(f"Mapa del CSV generado con {coords_agregadas} puntos coloreados dinámicamente y leyenda.")
                 else:
                      st.warning("No se pudieron agregar puntos al mapa del CSV.")
                      st.session_state.mapa_csv = None
+
             else:
-                 st.warning("⚠️ No se encontraron coordenadas válidas en el CSV después del procesamiento.")
-                 st.session_state.mapa_csv = None
+                st.warning("⚠️ No se encontraron coordenadas válidas en el CSV después del procesamiento.")
+                st.session_state.mapa_csv = None
+
         else:
              st.error("No se pudieron cargar los datos del CSV o el archivo está vacío/inválido.")
              st.session_state.data = None
              st.session_state.mapa_csv = None
+
     except Exception as e:
         st.error(f"⚠️ Error general al procesar el CSV: {str(e)}")
         st.error(traceback.format_exc())
         st.session_state.data = None
         st.session_state.mapa_csv = None
-
 
 # --- Lógica Dirección Manual (sin cambios) ---
 elif direccion_input:
@@ -335,7 +361,8 @@ elif direccion_input:
         if st.session_state.mostrar_mapa == 'manual':
              st.session_state.mostrar_mapa = None
 
-# --- Mostrar el mapa correspondiente (sin cambios) ---
+
+# --- Mostrar el mapa correspondiente (Sin cambios) ---
 st.markdown("---")
 # ... (código sin cambios) ...
 map_to_show = st.session_state.get("mostrar_mapa")
@@ -343,10 +370,10 @@ csv_map_obj = st.session_state.get("mapa_csv")
 manual_map_obj = st.session_state.get("mapa_manual")
 
 if map_to_show == 'csv' and csv_map_obj:
-    st.markdown("### 🗺️ Mapa con direcciones del CSV por Tipo")
-    st_folium(csv_map_obj, key="folium_map_csv_color", width=700, height=500, returned_objects=[])
+    st.markdown("### 🗺️ Mapa con direcciones del CSV por Tipo (Colores Dinámicos)")
+    st_folium(csv_map_obj, key="folium_map_csv_dynamic_color", width=700, height=500, returned_objects=[]) # Nueva key
 elif map_to_show == 'manual' and manual_map_obj:
     st.markdown("### 🗺️ Mapa con la dirección manual")
-    st_folium(manual_map_obj, key="folium_map_manual", width=700, height=500, returned_objects=[])
+    st.folium(manual_map_obj, key="folium_map_manual", width=700, height=500, returned_objects=[])
 else:
     st.info("Mapa aparecerá aquí después de procesar una dirección o el CSV.")
