@@ -19,7 +19,6 @@ st.title("🗺️ Mapa de Direcciones Corregidas en Conchalí")
 print("--- Script Iniciado ---")
 
 # --- Constantes de Nombres de Columnas (Definidos SIN espacios extra) ---
-# El código ahora limpiará los nombres leídos del CSV para que coincidan con estos.
 COLUMNA_DIRECCION_ORIGINAL = u'¿Dónde ocurre este problema? (Por favor indica la dirección lo más exacta posible, Calle, Numero y Comuna)'
 COLUMNA_TIPO_ORIGINAL = u'¿Qué tipo de problema estás reportando?' # SIN espacios extra
 COLUMNA_DIRECCION_NUEVA = 'Direccion'
@@ -35,7 +34,6 @@ DEFAULT_ASSIGN_COLOR = 'black'
 # --- Funciones ---
 @st.cache_data
 def obtener_calles_conchali():
-    # ... (sin cambios) ...
     """Obtiene la lista de calles oficiales de Conchalí desde una fuente web."""
     print(">>> Ejecutando obtener_calles_conchali (o usando caché)...")
     url = "https://codigo-postal.co/chile/santiago/calles-de-conchali/"
@@ -64,7 +62,6 @@ def obtener_calles_conchali():
         return pd.DataFrame(columns=["Calle", "normalizado"])
 
 def normalizar(texto):
-    # ... (sin cambios) ...
     """Normaliza el texto: quita acentos, convierte a mayúsculas, elimina no alfanuméricos (excepto espacios) y espacios extra."""
     try:
         texto = unidecode(str(texto)).upper()
@@ -75,50 +72,84 @@ def normalizar(texto):
         return str(texto).upper().strip()
 
 def corregir_direccion(direccion_input, calles_df, umbral=80):
-    # ... (sin cambios) ...
     """Intenta corregir el nombre de la calle usando fuzzy matching contra la lista oficial."""
+    # Asegurar que la entrada sea string y quitar espacios extra
     original_completa = str(direccion_input).strip()
+    if not original_completa: # Si está vacío después de strip, devolver vacío
+        return ""
+
     match = re.match(r"(.*?)(\s*\d+)$", original_completa)
     if match:
         direccion_texto = match.group(1).strip()
         numero_direccion = match.group(2).strip()
     else:
-        direccion_texto = original_completa
+        direccion_texto = original_completa # Si no hay número, tomar todo como texto
         numero_direccion = ""
 
-    if not direccion_texto: return original_completa
+    # Si no hay texto de dirección (ej. solo era un número), devolver original
+    if not direccion_texto:
+        return original_completa
 
     entrada_norm = normalizar(direccion_texto)
     mejor_match = None
-    direccion_corregida_texto = direccion_texto
+    direccion_corregida_texto = direccion_texto # Empezar con el texto original
 
+    # Proceder solo si hay calles oficiales y la columna normalizada existe
     if calles_df is not None and not calles_df.empty and "normalizado" in calles_df.columns:
         try:
-            posibles_matches = process.extract(entrada_norm, calles_df["normalizado"], scorer=fuzz.token_sort_ratio, limit=1)
-            if posibles_matches: mejor_match = possibles_matches[0]
-
-            if mejor_match and mejor_match[1] >= umbral:
-                idx = calles_df["normalizado"] == mejor_match[0]
-                if idx.any(): direccion_corregida_texto = calles_df.loc[idx, "Calle"].values[0]
-                else: mejor_match = None
+            # Usar process.extractOne para simplificar
+            mejor_match_result = process.extractOne(entrada_norm, calles_df["normalizado"], scorer=fuzz.token_sort_ratio)
+            if mejor_match_result and mejor_match_result[1] >= umbral:
+                # Si hay buen match, obtener el nombre oficial de la calle
+                calle_oficial_norm = mejor_match_result[0]
+                # Buscar el nombre original correspondiente en calles_df
+                idx = calles_df["normalizado"] == calle_oficial_norm
+                if idx.any():
+                    direccion_corregida_texto = calles_df.loc[idx, "Calle"].values[0]
+                # else: (si no se encuentra el índice, algo raro pasó, mantener texto original)
         except Exception as e:
-            mejor_match = None
+            print(f"Error durante fuzzy matching para '{entrada_norm}': {e}")
+            # Mantener el texto original si falla el matching
 
+    # Recomponer la dirección final con el texto (corregido o no) y el número
     direccion_final = direccion_corregida_texto + (" " + numero_direccion if numero_direccion else "")
     return direccion_final.strip()
 
+# --- VERSIÓN ACTUALIZADA de safe_corregir ---
+def safe_corregir(x, df_calles):
+    """Wrapper seguro para corregir_direccion, maneja NaNs y errores."""
+    # Si la entrada no es un string, está vacía o es NaN/None, devolverla tal cual.
+    if pd.isna(x) or not isinstance(x, str) or not x.strip():
+        # print(f"Skipping correction for input: {x}") # Debug opcional
+        return x # Devuelve NaN, None, '', etc. sin intentar corregir
+
+    try:
+        # Proceder con la corrección solo si es un string válido
+        corrected = corregir_direccion(x, df_calles)
+        # Debug opcional para ver qué se corrigió
+        # if x.strip().upper() != corrected.strip().upper():
+        #      print(f"CORRECCIÓN: '{x}' -> '{corrected}'")
+        return corrected
+    except Exception as e_corr:
+        print(f"ERROR durante safe_corregir para '{x}': {e_corr}")
+        return x # Devolver original si falla la corrección
+# --- FIN safe_corregir ---
 
 @st.cache_data(ttl=3600)
 def obtener_coords(direccion_corregida_completa):
-    # ... (sin cambios) ...
     """Obtiene coordenadas (lat, lon) para una dirección en Conchalí usando Nominatim."""
-    if not direccion_corregida_completa: return None
+    # Validar entrada antes de consultar
+    if pd.isna(direccion_corregida_completa) or not isinstance(direccion_corregida_completa, str) or not direccion_corregida_completa.strip():
+        return None
+
     direccion_query = f"{direccion_corregida_completa}, Conchalí, Región Metropolitana, Chile"
-    geolocator = Nominatim(user_agent=f"mapa_conchali_app_v9_{int(time.time())}", timeout=10) # Incrementar versión agente
+    geolocator = Nominatim(user_agent=f"mapa_conchali_app_v10_{int(time.time())}", timeout=10) # Incrementar versión
     try:
         location = geolocator.geocode(direccion_query, addressdetails=True)
         if location: return location.latitude, location.longitude
-        else: return None
+        else:
+            # print(f"Geocoding no encontró resultado para: {direccion_query}") # Debug opcional
+            return None
     except GeocoderUnavailable:
         st.warning("Servicio de geocodificación no disponible temporalmente.")
         return None
@@ -126,44 +157,32 @@ def obtener_coords(direccion_corregida_completa):
         st.error(f"Error geocodificación para '{direccion_query}': {e}")
         return None
 
-# --- VERSIÓN CORREGIDA: LIMPIA NOMBRES DE COLUMNA ---
 def cargar_csv_predeterminado():
-    """Carga datos, LIMPIA nombres de columna (elimina espacios extra),
-       renombra DIRECCIÓN y procesa TIPO."""
+    """Carga datos, LIMPIA nombres de columna, renombra DIRECCIÓN y procesa TIPO."""
     print(">>> Cargando CSV...")
     url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSAitwliDu4GoT-HU2zXh4eFUDnky9o3M-B9PHHp7RbLWktH7vuHu1BMT3P5zqfVIHAkTptZ8VaZ-F7/pub?gid=1694829461&single=true&output=csv"
     try:
-        # Cargar los datos primero
         data = pd.read_csv(url)
         print("--- Columnas Originales Detectadas (Pre-Limpieza) ---")
-        # Imprimir con comillas para visualizar espacios extra
         print([f"'{col}'" for col in data.columns])
 
-        # --- *** PASO CLAVE: Limpiar espacios de TODOS los nombres de columna *** ---
         data.columns = data.columns.str.strip()
         print("--- Columnas Después de Limpiar Espacios (str.strip) ---")
-        print([f"'{col}'" for col in data.columns]) # Imprimir nombres limpios
-
-        # --- Ahora, proceder usando los nombres LIMPIOS definidos en las constantes ---
+        print([f"'{col}'" for col in data.columns])
 
         # Verificar y procesar columna Dirección (usando nombre limpio)
         if COLUMNA_DIRECCION_ORIGINAL in data.columns:
-            # Especificar dtype ANTES de renombrar/procesar
             data[COLUMNA_DIRECCION_ORIGINAL] = data[COLUMNA_DIRECCION_ORIGINAL].astype(str)
-            # Renombrar usando el nombre limpio
             data.rename(columns={COLUMNA_DIRECCION_ORIGINAL: COLUMNA_DIRECCION_NUEVA}, inplace=True)
             print(f"Columna dirección renombrada a '{COLUMNA_DIRECCION_NUEVA}'")
-            # Procesar la columna renombrada
             data[COLUMNA_DIRECCION_NUEVA] = data[COLUMNA_DIRECCION_NUEVA].str.strip()
         else:
             st.error(f"Error crítico: No se encontró la columna de dirección '{COLUMNA_DIRECCION_ORIGINAL}' DESPUÉS de limpiar nombres.")
-            # Podríamos añadir una lista de posibles nombres si falla, pero por ahora error.
             st.info(f"Columnas disponibles: {list(data.columns)}")
             return None
 
         # Verificar y procesar columna Tipo (usando nombre limpio)
         if COLUMNA_TIPO_ORIGINAL in data.columns:
-             # Especificar dtype ANTES de procesar
             data[COLUMNA_TIPO_ORIGINAL] = data[COLUMNA_TIPO_ORIGINAL].astype(str)
             print(f"Procesando columna de tipo: '{COLUMNA_TIPO_ORIGINAL}'...")
             data[COLUMNA_TIPO_ORIGINAL] = data[COLUMNA_TIPO_ORIGINAL].fillna("DESCONOCIDO")
@@ -172,8 +191,7 @@ def cargar_csv_predeterminado():
         else:
             st.warning(f"Advertencia: No se encontró la columna de tipo '{COLUMNA_TIPO_ORIGINAL}' DESPUÉS de limpiar nombres. Se creará con valor 'DESCONOCIDO'.")
             st.info(f"Columnas disponibles: {list(data.columns)}")
-            data[COLUMNA_TIPO_ORIGINAL] = "DESCONOCIDO" # Crear con el nombre limpio
-
+            data[COLUMNA_TIPO_ORIGINAL] = "DESCONOCIDO"
 
         print("--- Columnas Finales en DataFrame ---")
         print(data.columns)
@@ -184,8 +202,6 @@ def cargar_csv_predeterminado():
         st.error(f"Error general al cargar o procesar el CSV: {e}")
         st.error(traceback.format_exc())
         return None
-# --- FIN VERSIÓN CORREGIDA ---
-
 
 # --- Inicialización del Estado de Sesión ---
 if "data" not in st.session_state: st.session_state.data = None
@@ -214,19 +230,17 @@ if usar_csv_button:
         st.stop()
 
     try:
-        # Cargar datos CSV (usando la función actualizada que limpia columnas)
         data_cargada = cargar_csv_predeterminado()
 
         if data_cargada is not None and not data_cargada.empty:
             st.session_state.data = data_cargada
 
             # --- Generación Dinámica de Mapa de Colores ---
-            # Usar el nombre de columna LIMPIO
             print("--- Generando Mapa de Colores Dinámico... ---")
             dynamic_color_map = {}
             if COLUMNA_TIPO_ORIGINAL in st.session_state.data.columns:
                 unique_types = sorted(list(st.session_state.data[COLUMNA_TIPO_ORIGINAL].unique()))
-                print(f"Tipos únicos encontrados para mapa de colores (post-limpieza): {unique_types}")
+                print(f"Tipos únicos encontrados para mapa de colores: {unique_types}")
                 palette_len = len(BASE_COLOR_PALETTE)
                 color_index = 0
                 if "DESCONOCIDO" in unique_types:
@@ -241,44 +255,39 @@ if usar_csv_button:
                 st.warning(f"Columna '{COLUMNA_TIPO_ORIGINAL}' no encontrada para generar mapa de colores.")
                 dynamic_color_map["DESCONOCIDO"] = COLOR_DESCONOCIDO
 
-            # --- Corregir direcciones ---
-            # Usar el nombre nuevo/limpio de la columna de dirección ('Direccion')
+            # --- Corregir direcciones (LÓGICA SIMPLIFICADA) ---
             print("--- Corrigiendo Direcciones (CSV)... ---")
             if COLUMNA_DIRECCION_NUEVA in st.session_state.data.columns:
-                # Usar dropna() sin inplace=True para evitar SettingWithCopyWarning potencial
-                data_valid_direccion = st.session_state.data.dropna(subset=[COLUMNA_DIRECCION_NUEVA])
-                if not data_valid_direccion.empty:
-                    def safe_corregir(x, df_calles):
-                        try: return corregir_direccion(x, df_calles)
-                        except Exception as e_corr:
-                            print(f"Error corrigiendo '{x}': {e_corr}")
-                            return x
-                    # Aplicar sobre el DF filtrado y asignar de vuelta o a nueva columna
-                    st.session_state.data["direccion_corregida"] = data_valid_direccion[COLUMNA_DIRECCION_NUEVA].apply(safe_corregir, args=(calles_df,))
-                    # Rellenar NaNs introducidos por la diferencia de índices si es necesario
-                    st.session_state.data["direccion_corregida"].fillna(pd.NA, inplace=True) # O usar '' si se prefiere string vacío
-                else:
-                    st.session_state.data["direccion_corregida"] = pd.NA # Crear columna vacía si no hay direcciones válidas
-                    st.warning("No hay direcciones válidas para corregir.")
-
+                print(f"Aplicando corrección a la columna '{COLUMNA_DIRECCION_NUEVA}'...")
+                # Aplicar directamente a la columna usando el safe_corregir actualizado
+                st.session_state.data["direccion_corregida"] = st.session_state.data[COLUMNA_DIRECCION_NUEVA].apply(
+                    safe_corregir,
+                    args=(calles_df,) # Pasar calles_df como argumento extra
+                )
+                # --- DEBUG ---
+                print("--- Primeras 10 filas de 'direccion_corregida' ---")
+                print(st.session_state.data[[COLUMNA_DIRECCION_NUEVA, "direccion_corregida"]].head(10))
+                # Contar cuántas no son NaN y diferentes de la original (estimación)
+                valid_original = st.session_state.data[COLUMNA_DIRECCION_NUEVA].notna() & (st.session_state.data[COLUMNA_DIRECCION_NUEVA].astype(str).str.strip() != '')
+                valid_corrected = st.session_state.data["direccion_corregida"].notna() & (st.session_state.data["direccion_corregida"].astype(str).str.strip() != '')
+                corrections_made = (valid_original & valid_corrected & (st.session_state.data[COLUMNA_DIRECCION_NUEVA] != st.session_state.data["direccion_corregida"])).sum()
+                print(f"Filas con dirección corregida válida (no NaN/vacía): {valid_corrected.sum()}")
+                print(f"Número estimado de correcciones realizadas (diferentes al original): {corrections_made}")
+                # --- END DEBUG ---
             else:
-                 st.error(f"Falta la columna '{COLUMNA_DIRECCION_NUEVA}' después de cargar/renombrar.")
+                 st.error(f"Falta la columna '{COLUMNA_DIRECCION_NUEVA}' para la corrección.")
                  st.stop()
+            # --- FIN CORRECCIÓN SIMPLIFICADA ---
 
             # --- Mostrar tabla ---
             st.markdown("### Datos cargados y corregidos (CSV):")
             display_cols = []
-            # Usar nombres limpios/nuevos
             if COLUMNA_DIRECCION_NUEVA in st.session_state.data.columns: display_cols.append(COLUMNA_DIRECCION_NUEVA)
             if "direccion_corregida" in st.session_state.data.columns: display_cols.append("direccion_corregida")
             if COLUMNA_TIPO_ORIGINAL in st.session_state.data.columns: display_cols.append(COLUMNA_TIPO_ORIGINAL)
 
             if display_cols and not st.session_state.data.empty:
-                 # Mostrar solo filas con dirección corregida no nula si esa columna existe
                  df_display = st.session_state.data
-                 #if "direccion_corregida" in df_display.columns:
-                 #    df_display = df_display.dropna(subset=["direccion_corregida"])
-
                  st.dataframe(df_display[display_cols].head(20))
                  if len(df_display) > 20: st.caption(f"... y {len(df_display) - 20} más.")
             else:
@@ -286,9 +295,12 @@ if usar_csv_button:
 
             # --- Obtener coordenadas ---
             print("--- Obteniendo Coordenadas (CSV)... ---")
+            # Aplicar sobre la columna 'direccion_corregida' que ya existe
             if "direccion_corregida" in st.session_state.data.columns:
-                 # Filtrar NaNs en direccion_corregida ANTES de aplicar geocoding
-                 data_to_geocode = st.session_state.data.dropna(subset=["direccion_corregida"])
+                 # Filtrar NaNs/None/vacíos en direccion_corregida ANTES de geocodificar
+                 # Usar pd.NA para comparación segura con posibles None/NaN
+                 mask_valid_corrected = st.session_state.data["direccion_corregida"].notna() & (st.session_state.data["direccion_corregida"].astype(str).str.strip() != '')
+                 data_to_geocode = st.session_state.data[mask_valid_corrected]
 
                  if not data_to_geocode.empty:
                      with st.spinner(f"Obteniendo coordenadas para {len(data_to_geocode)} direcciones..."):
@@ -297,62 +309,59 @@ if usar_csv_button:
                              except Exception as e_coords:
                                  print(f"Error en geocoding para '{x}': {e_coords}")
                                  return None
-                         # Aplicar al subset y luego unir/mapear de vuelta al DF principal
+                         # Aplicar al subset
                          coords_series = data_to_geocode["direccion_corregida"].apply(safe_coords)
-                         # Usar map para asignar coordenadas al DataFrame original basado en el índice
-                         st.session_state.data["coords"] = st.session_state.data.index.map(coords_series)
+                         # Asignar de vuelta al DataFrame principal usando el índice
+                         st.session_state.data["coords"] = coords_series
 
-
-                     original_rows = len(st.session_state.data.dropna(subset=["direccion_corregida"])) # Contar sobre las que se intentó geocodificar
-                     # Filtrar NaNs en la nueva columna 'coords'
-                     data_with_coords = st.session_state.data.dropna(subset=["coords"])
-                     found_rows = len(data_with_coords)
+                     # Filtrar el DataFrame principal para mantener solo filas con coordenadas válidas
+                     original_rows = len(data_to_geocode) # Número de intentos
+                     st.session_state.data = st.session_state.data.dropna(subset=["coords"])
+                     found_rows = len(st.session_state.data)
 
                      if original_rows > 0:
-                         st.success(f"Se encontraron coordenadas para {found_rows} de {original_rows} direcciones procesadas.")
+                         st.success(f"Se encontraron coordenadas para {found_rows} de {original_rows} direcciones corregidas válidas.")
                      else:
-                         st.info("No había direcciones válidas para intentar geocodificar.")
+                         st.info("No había direcciones corregidas válidas para intentar geocodificar.")
                      print(f"Coordenadas encontradas: {found_rows}/{original_rows}")
-                     # Actualizar st.session_state.data para que solo contenga filas con coordenadas
-                     st.session_state.data = data_with_coords
 
                  else:
-                      st.warning("No quedaron direcciones válidas después de la corrección para geocodificar.")
+                      st.warning("No quedaron direcciones corregidas válidas para geocodificar.")
                       st.session_state.data["coords"] = None # Asegurar columna existe vacía
             else:
                  st.warning("No se pudo proceder a la geocodificación (falta 'direccion_corregida').")
                  st.session_state.data["coords"] = None # Asegurar columna existe vacía
 
+
             # --- Crear el mapa ---
-            # Ahora st.session_state.data ya está filtrado para tener solo filas con coordenadas
             if "coords" in st.session_state.data.columns and not st.session_state.data.empty:
                 print("--- Creando Mapa Folium (CSV)... ---")
+                # st.session_state.data ahora solo tiene filas con coordenadas
                 coords_list = st.session_state.data['coords'].tolist()
                 map_center = [-33.38, -70.65]
-                if coords_list: # Ya sabemos que no está vacío y no tiene NaNs
-                    valid_coords = [c for c in coords_list if isinstance(c, tuple) and len(c) == 2]
-                    if valid_coords: # Chequeo extra por si algo raro pasó
-                        avg_lat = sum(c[0] for c in valid_coords) / len(valid_coords)
-                        avg_lon = sum(c[1] for c in valid_coords) / len(valid_coords)
-                        map_center = [avg_lat, avg_lon]
+                # No es necesario re-chequear coords_list, ya filtramos
+                valid_coords = [c for c in coords_list if isinstance(c, tuple) and len(c) == 2]
+                if valid_coords:
+                    avg_lat = sum(c[0] for c in valid_coords) / len(valid_coords)
+                    avg_lon = sum(c[1] for c in valid_coords) / len(valid_coords)
+                    map_center = [avg_lat, avg_lon]
 
                 mapa_obj = folium.Map(location=map_center, zoom_start=13)
                 coords_agregadas = 0
                 tipos_en_mapa = set()
 
                 print("--- Añadiendo Marcadores al Mapa ---")
-                for i, row in st.session_state.data.iterrows(): # Iterar sobre el DF ya filtrado
+                for i, row in st.session_state.data.iterrows():
                     try:
-                        # Obtener tipo usando el NOMBRE ORIGINAL limpio
                         tipo = str(row.get(COLUMNA_TIPO_ORIGINAL, "DESCONOCIDO")).strip().upper()
                         if tipo == '': tipo = "DESCONOCIDO"
 
                         marker_color = dynamic_color_map.get(tipo, DEFAULT_ASSIGN_COLOR)
                         tipos_en_mapa.add(tipo)
 
-                        # Debug: Imprimir tipo y color para algunas filas
-                        if i < 5 or i % 50 == 0:
-                             print(f"Row {i}: Tipo='{tipo}', Color='{marker_color}' (In Map? {tipo in dynamic_color_map})")
+                        # Debug
+                        # if i < 5 or i % 50 == 0:
+                        #      print(f"Row Index {i}: Tipo='{tipo}', Color='{marker_color}' (In Map? {tipo in dynamic_color_map})")
 
                         popup_text = f"<b>Tipo:</b> {tipo.capitalize()}<br>"
                         if "direccion_corregida" in row and pd.notna(row['direccion_corregida']):
@@ -363,7 +372,7 @@ if usar_csv_button:
                         tooltip_text = row.get('direccion_corregida', 'Ubicación') + f" ({tipo.capitalize()})"
 
                         folium.Marker(
-                            location=row["coords"], # Ya sabemos que no es NaN
+                            location=row["coords"], # Sabemos que no es NaN
                             popup=folium.Popup(popup_text, max_width=300),
                             tooltip=tooltip_text,
                             icon=folium.Icon(color=marker_color, icon='info-sign')
@@ -411,7 +420,7 @@ if usar_csv_button:
 
 # --- Lógica Dirección Manual ---
 elif direccion_input:
-     # ... (sin cambios en la lógica manual) ...
+     # ... (sin cambios) ...
     print("--- Input Manual Detectado ---")
     st.session_state.mapa_csv = None
     st.session_state.data = None
@@ -453,6 +462,7 @@ elif direccion_input:
         st.session_state.mapa_manual = None
     print("--- Fin Procesamiento Manual ---")
 
+
 # --- Mostrar el mapa correspondiente ---
 st.markdown("---")
 map_to_show = st.session_state.get("mostrar_mapa")
@@ -463,16 +473,14 @@ print(f"--- Decidiendo qué Mapa Mostrar: {map_to_show} ---")
 
 if map_to_show == 'csv' and csv_map_obj:
     st.markdown("### 🗺️ Mapa CSV")
-    st_folium(csv_map_obj, key="folium_map_csv_v5", width='100%', height=600, returned_objects=[]) # Nueva key
+    st_folium(csv_map_obj, key="folium_map_csv_v6", width='100%', height=600, returned_objects=[]) # Nueva key
 elif map_to_show == 'manual' and manual_map_obj:
     st.markdown("### 🗺️ Mapa Dirección Manual")
-    st_folium(manual_map_obj, key="folium_map_manual_v5", width='100%', height=500, returned_objects=[]) # Nueva key
+    st_folium(manual_map_obj, key="folium_map_manual_v6", width='100%', height=500, returned_objects=[]) # Nueva key
 else:
-    # Mensaje informativo si no hay mapa que mostrar
     if not usar_csv_button and not direccion_input:
         st.info("Ingresa una dirección o carga el CSV para ver el mapa aquí.")
     elif (usar_csv_button or direccion_input) and map_to_show is None:
-         # Si se intentó pero falló, el error ya se mostró antes
          st.warning("No se pudo generar el mapa. Revisa los mensajes anteriores.")
 
 print("--- Script Finalizado ---")
