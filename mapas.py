@@ -132,7 +132,7 @@ def cargar_csv_predeterminado():
     # ... (código idéntico) ...
     """Carga los datos desde la URL y prepara la columna 'Que es'."""
     print(">>> Cargando CSV...") # Log
-    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR1sj1BfL4P6_EO0EGhN2e2qeQA78Rmvl0s7nGhrlGnEBo7ZCa6OrJL1B0gF_JoaiMEpqmtap7WfzxI/pub?gid=0&single=true&output=csv"
+    url = "https://docs.google.com/spreadsheets/d/1UdibeQVU5FNwDoBxXTkoAVmc7T2lRXvMP7pqNo2jF6U/edit?gid=1694829461#gid=1694829461"
     try:
         data = pd.read_csv(url, dtype={'Direccion': str, 'Que es': str})
         if "Direccion" not in data.columns:
