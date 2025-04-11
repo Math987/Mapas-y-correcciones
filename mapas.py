@@ -130,27 +130,28 @@ def obtener_coords(direccion_corregida_completa):
 
 def cargar_csv_predeterminado():
     # ... (código idéntico) ...
-    """Carga los datos desde la URL y prepara la columna 'Que es'."""
+     """Carga los datos desde la URL y prepara la columna 'Que es'."""
     print(">>> Cargando CSV...") # Log
-    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSAitwliDu4GoT-HU2zXh4eFUDnky9o3M-B9PHHp7RbLWktH7vuHu1BMT3P5zqfVIHAkTptZ8VaZ-F7/pubhtml?gid=1694829461&single=true"
+    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSAitwliDu4GoT-HU2zXh4eFUDnky9o3M-B9PHHp7RbLWktH7vuHu1BMT3P5zqfVIHAkTptZ8VaZ-F7/pub?gid=1694829461&single=true&output=csv"
     try:
-        data = pd.read_csv(url, dtype={'Direccion': str, 'Que es': str})
+        data = pd.read_csv(url, dtype={'¿Dónde ocurre este problema? (Por favor indica la dirección lo más exacta posible, Calle, Numero y Comuna': str, '¿Qué tipo de problema estás reportando?': str})
         if "Direccion" not in data.columns:
             st.error("Columna 'Direccion' no encontrada en el CSV.")
             return None
-        data["Direccion"] = data["Direccion"].str.strip()
+        data["¿Dónde ocurre este problema? (Por favor indica la dirección lo más exacta posible, Calle, Numero y Comuna)"] = data["¿Dónde ocurre este problema? (Por favor indica la dirección lo más exacta posible, Calle, Numero y Comuna)"].str.strip()
         if "Que es" in data.columns:
-            data["Que es"] = data["Que es"].fillna("DESCONOCIDO").astype(str).str.strip().str.upper()
-            data["Que es"] = data["Que es"].replace(r'^\s*$', 'DESCONOCIDO', regex=True)
+            data["¿Qué tipo de problema estás reportando?"] = data["¿Qué tipo de problema estás reportando?"].fillna("DESCONOCIDO").astype(str).str.strip().str.upper()
+            data["¿Qué tipo de problema estás reportando?"] = data["¿Qué tipo de problema estás reportando?"].replace(r'^\s*$', 'DESCONOCIDO', regex=True)
         else:
             st.warning("Columna 'Que es' no encontrada. Se asignará 'DESCONOCIDO'.")
-            data["Que es"] = "DESCONOCIDO"
+            data["¿Qué tipo de problema estás reportando?"] = "DESCONOCIDO"
         print(f"<<< CSV Cargado: {len(data)} filas.") # Log
         return data
     except Exception as e:
         st.error(f"Error al cargar CSV: {e}")
         # st.error(traceback.format_exc()) # Opcional: mostrar error completo
         return None
+
 
 
 # --- Inicialización del Estado de Sesión ---
