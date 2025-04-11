@@ -97,10 +97,6 @@ def corregir_direccion(direccion_input, calles_df, umbral=80):
             # print(f"ERROR en fuzzywuzzy o indexación para '{entrada_norm}': {e}") # Opcional
             mejor_match = None
 
-    # score_txt = f"Score: {mejor_match[1]}" if (mejor_match and mejor_match[1] >= umbral) else f"Score: {mejor_match[1] if mejor_match else 'N/A'}"
-    # if direccion_corregida_texto.upper() != direccion_texto.upper(): print(f"DEBUG CORRECCION: '{direccion_texto}' -> '{direccion_corregida_texto}' ({score_txt})")
-    # else: print(f"DEBUG CORRECCION: '{direccion_texto}' -> NO CORREGIDO ({score_txt})")
-
     direccion_final = direccion_corregida_texto + (" " + numero_direccion if numero_direccion else "")
     return direccion_final.strip()
 
@@ -111,7 +107,8 @@ def obtener_coords(direccion_corregida_completa):
     if not direccion_corregida_completa: return None
     direccion_query = f"{direccion_corregida_completa}, Conchalí, Región Metropolitana, Chile"
     # print(f"DEBUG GEO: Buscando: {direccion_query}") # Log opcional
-    geolocator = Nominatim(user_agent=f"mapa_conchali_app_v5_{int(time.time())}", timeout=10)
+    # Es buena práctica variar el user_agent para no ser bloqueado. Usar un identificador único si es posible.
+    geolocator = Nominatim(user_agent=f"mapa_conchali_app_v6_{int(time.time())}", timeout=10)
     try:
         location = geolocator.geocode(direccion_query, addressdetails=True)
         if location: return location.latitude, location.longitude
@@ -124,39 +121,76 @@ def obtener_coords(direccion_corregida_completa):
         st.error(f"Error geocodificación para '{direccion_query}': {e}")
         return None
 
+# --- VERSIÓN ACTUALIZADA ---
 def cargar_csv_predeterminado():
-    """Carga los datos desde la URL y prepara la columna 'Que es'.""" #<-- INDENTACIÓN CORREGIDA
-    print(">>> Cargando CSV...") # Log                              #<-- INDENTACIÓN CORREGIDA
-    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSAitwliDu4GoT-HU2zXh4eFUDnky9o3M-B9PHHp7RbLWktH7vuHu1BMT3P5zqfVIHAkTptZ8VaZ-F7/pub?gid=1694829461&single=true&output=csv" #<-- INDENTACIÓN CORREGIDA
-    try:                                                            #<-- INDENTACIÓN CORREGIDA
-        # Código dentro del try indentado un nivel más
-        data = pd.read_csv(url, dtype={'¿Dónde ocurre este problema? (Por favor indica la dirección lo más exacta posible, Calle, Numero y Comuna': str, '¿Qué tipo de problema estás reportando?': str})
-        # Renombrar columnas para simplificar
-        data.rename(columns={
-            '¿Dónde ocurre este problema? (Por favor indica la dirección lo más exacta posible, Calle, Numero y Comuna)': 'Direccion',
-            '¿Qué tipo de problema estás reportando?': 'Que es'
-        }, inplace=True)
+    """Carga los datos desde la URL, renombra columnas clave y prepara la columna 'Que es'."""
+    print(">>> Cargando CSV...") # Log
+    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSAitwliDu4GoT-HU2zXh4eFUDnky9o3M-B9PHHp7RbLWktH7vuHu1BMT3P5zqfVIHAkTptZ8VaZ-F7/pub?gid=1694829461&single=true&output=csv"
+    try:
+        # Nombres originales de las columnas que nos interesan - ¡VERIFICAR QUE SEAN EXACTOS!
+        original_direccion_col = '¿Dónde ocurre este problema? (Por favor indica la dirección lo más exacta posible, Calle, Numero y Comuna)'
+        original_tipo_col = '¿Qué tipo de problema estás reportando?'
 
+        # Especificar dtype usando los nombres originales
+        data = pd.read_csv(url, dtype={
+            original_direccion_col: str,
+            original_tipo_col: str
+        })
+        print("--- Columnas Originales Detectadas ---")
+        print(data.columns) # DEBUG: Para ver las columnas tal como las lee pandas
+
+        # Verificar si las columnas originales existen antes de renombrar
+        if original_direccion_col not in data.columns:
+            st.error(f"Error crítico: No se encontró la columna de dirección esperada: '{original_direccion_col}'")
+            return None
+
+        # Procesar columna de tipo: Renombrar si existe, crear si no.
+        if original_tipo_col not in data.columns:
+            st.warning(f"Advertencia: No se encontró la columna de tipo esperada: '{original_tipo_col}'. Se usará 'DESCONOCIDO'.")
+            # Si falta la columna de tipo, la creamos directamente con el nombre nuevo 'Que es'
+            data['Que es'] = 'DESCONOCIDO'
+            # Renombramos solo la columna de dirección si existe
+            if original_direccion_col in data.columns: # Doble chequeo por si acaso
+                 data.rename(columns={original_direccion_col: 'Direccion'}, inplace=True)
+
+        else:
+            # Si ambas columnas originales existen, procedemos a renombrar ambas
+             data.rename(columns={
+                original_direccion_col: 'Direccion',
+                original_tipo_col: 'Que es'
+            }, inplace=True)
+
+        print("--- Columnas Después de Renombrar/Asegurar ---")
+        print(data.columns) # DEBUG: Para ver las columnas después del proceso
+
+        # --- Ahora, trabajar SÓLO con los nombres nuevos 'Direccion' y 'Que es' ---
+
+        # Asegurar que la columna 'Direccion' existe (podría haber fallado el rename si el original no estaba)
         if "Direccion" not in data.columns:
-            # Código dentro del if indentado otro nivel más
-            st.error("Columna 'Direccion' no encontrada en el CSV.")
-            return None # De vuelta al nivel del try/except
+             st.error("Error después de renombrar: Falta la columna 'Direccion'.")
+             # Podríamos intentar usar la original si aún existe, pero es mejor parar si el rename falló.
+             return None
+        # Aplicar strip() sólo si la columna no es nula para evitar errores
         data["Direccion"] = data["Direccion"].str.strip()
+
+        # Asegurar que la columna 'Que es' existe y procesarla
         if "Que es" in data.columns:
-            # Código dentro del if indentado un nivel más que el try
             data["Que es"] = data["Que es"].fillna("DESCONOCIDO").astype(str).str.strip().str.upper()
             data["Que es"] = data["Que es"].replace(r'^\s*$', 'DESCONOCIDO', regex=True)
         else:
-            # Código dentro del else al mismo nivel que el if
-            st.warning("Columna 'Que es' no encontrada. Se asignará 'DESCONOCIDO'.")
+            # Este caso no debería ocurrir si la lógica anterior funcionó, pero por si acaso:
+            st.warning("Columna 'Que es' inesperadamente ausente después del procesamiento inicial. Se asignará 'DESCONOCIDO'.")
             data["Que es"] = "DESCONOCIDO"
-        print(f"<<< CSV Cargado: {len(data)} filas.") # Log - Mismo nivel que asignaciones dentro del try
-        return data # De vuelta al nivel del try/except
-    except Exception as e:                                          #<-- INDENTACIÓN CORREGIDA (nivel de try)
-        # Código dentro del except indentado un nivel más
-        st.error(f"Error al cargar CSV: {e}")
-        # st.error(traceback.format_exc()) # Opcional: mostrar error completo
-        return None # De vuelta al nivel del try/except
+
+        print(f"<<< CSV Cargado y Procesado: {len(data)} filas.")
+        return data
+
+    except Exception as e:
+        st.error(f"Error general al cargar o procesar el CSV: {e}")
+        st.error(traceback.format_exc()) # Mostrar stack trace para más detalles
+        return None
+# --- FIN VERSIÓN ACTUALIZADA ---
+
 
 # --- Inicialización del Estado de Sesión ---
 if "data" not in st.session_state: st.session_state.data = None
@@ -178,6 +212,9 @@ if usar_csv_button:
     print("--- Botón CSV Presionado ---") # Log
     st.session_state.mapa_manual = None
     st.session_state.mostrar_mapa = None
+    # Limpiar datos anteriores para evitar confusión si falla la carga
+    st.session_state.data = None
+    st.session_state.mapa_csv = None
     st.info("Procesando CSV predeterminado...")
 
     # --- Carga Perezosa de Calles ---
@@ -189,8 +226,8 @@ if usar_csv_button:
     # --- Fin Carga Perezosa ---
 
     try:
-        # 1. Cargar datos CSV
-        data_cargada = cargar_csv_predeterminado() # Ya tiene logs internos
+        # 1. Cargar datos CSV (usando la función actualizada)
+        data_cargada = cargar_csv_predeterminado() # Ya tiene logs internos y manejo de nombres
 
         if data_cargada is not None and not data_cargada.empty:
             st.session_state.data = data_cargada
@@ -198,6 +235,7 @@ if usar_csv_button:
             # --- Generación Dinámica de Mapa de Colores ---
             print("--- Generando Mapa de Colores Dinámico... ---") # Log
             dynamic_color_map = {}
+            # Trabajar siempre con 'Que es' porque la función de carga lo asegura
             if "Que es" in st.session_state.data.columns:
                 unique_types = sorted(list(st.session_state.data["Que es"].unique()))
                 palette_len = len(BASE_COLOR_PALETTE)
@@ -205,24 +243,22 @@ if usar_csv_button:
                 if "DESCONOCIDO" in unique_types:
                     dynamic_color_map["DESCONOCIDO"] = COLOR_DESCONOCIDO
                 for utype in unique_types:
-                    if utype not in dynamic_color_map:
+                    if utype not in dynamic_color_map: # Asegura que DESCONOCIDO no se sobrescriba si está al inicio
                         dynamic_color_map[utype] = BASE_COLOR_PALETTE[color_index % palette_len]
                         color_index += 1
-                # st.write("Categorías y colores asignados:") # Opcional mostrar en UI
-                # st.json(dynamic_color_map)
                 print(f"Mapa de colores generado: {dynamic_color_map}") # Log consola
             else:
-                st.warning("No se generó mapa de colores (falta columna 'Que es').")
-                # Aun así, podemos proceder, asignando un color por defecto a todo
+                # Este caso es menos probable ahora, pero mantenemos la advertencia
+                st.warning("No se pudo generar mapa de colores (columna 'Que es' no encontrada después del procesamiento).")
                 dynamic_color_map["DESCONOCIDO"] = COLOR_DESCONOCIDO # Asegurar que existe al menos este
+
             # --- Fin Generación Dinámica ---
 
             # 2. Corregir direcciones
             print("--- Corrigiendo Direcciones (CSV)... ---") # Log
-            # Asegurarse que la columna 'Direccion' existe y no es nula antes de aplicar
+            # Trabajar siempre con 'Direccion' porque la función de carga lo asegura
             if "Direccion" in st.session_state.data.columns:
                 st.session_state.data = st.session_state.data.dropna(subset=["Direccion"])
-                # Añadir manejo de errores por si corregir_direccion falla en una fila
                 def safe_corregir(x, df_calles):
                     try: return corregir_direccion(x, df_calles)
                     except Exception as e_corr:
@@ -230,57 +266,70 @@ if usar_csv_button:
                         return x # Devolver original si falla
                 st.session_state.data["direccion_corregida"] = st.session_state.data["Direccion"].apply(safe_corregir, args=(calles_df,))
             else:
-                 st.error("Falta la columna 'Direccion' después de cargar el CSV.")
+                 st.error("Falta la columna 'Direccion' después de cargar/renombrar el CSV.")
                  st.stop()
 
 
             # (Mostrar tabla)
             st.markdown("### Datos cargados y corregidos (CSV):")
             display_cols = []
+            # Usar los nombres nuevos y la columna generada
             if "Direccion" in st.session_state.data.columns: display_cols.append("Direccion")
             if "direccion_corregida" in st.session_state.data.columns: display_cols.append("direccion_corregida")
             if "Que es" in st.session_state.data.columns: display_cols.append("Que es")
 
-            if display_cols: # Mostrar solo si hay columnas para mostrar
+            if display_cols and not st.session_state.data.empty: # Mostrar solo si hay columnas y datos
                  st.dataframe(st.session_state.data[display_cols].head(20))
                  if len(st.session_state.data) > 20: st.caption(f"... y {len(st.session_state.data) - 20} más.")
             else:
-                 st.warning("No hay columnas relevantes ('Direccion', 'direccion_corregida', 'Que es') para mostrar en la tabla.")
+                 st.warning("No hay datos o columnas relevantes ('Direccion', 'direccion_corregida', 'Que es') para mostrar en la tabla.")
 
 
             # 3. Obtener coordenadas
             print("--- Obteniendo Coordenadas (CSV)... ---") # Log
             if "direccion_corregida" in st.session_state.data.columns:
                 with st.spinner("Obteniendo coordenadas del CSV..."):
-                    st.session_state.data = st.session_state.data.dropna(subset=["direccion_corregida"])
-                    # Añadir manejo de errores por si obtener_coords falla
-                    def safe_coords(x):
-                        try: return obtener_coords(x)
-                        except Exception as e_coords:
-                            print(f"Error en geocoding para '{x}': {e_coords}")
-                            return None
-                    st.session_state.data["coords"] = st.session_state.data["direccion_corregida"].apply(safe_coords)
+                    # Asegurarse que la columna existe antes de aplicar dropna
+                    if "direccion_corregida" in st.session_state.data.columns:
+                         st.session_state.data = st.session_state.data.dropna(subset=["direccion_corregida"])
 
-                # 4. Filtrar filas sin coordenadas
-                original_rows = len(st.session_state.data)
-                st.session_state.data = st.session_state.data.dropna(subset=["coords"])
-                found_rows = len(st.session_state.data)
-                st.success(f"Se encontraron coordenadas para {found_rows} de {original_rows} direcciones procesadas.")
-                print(f"Coordenadas encontradas: {found_rows}/{original_rows}") # Log
+                    if not st.session_state.data.empty: # Solo proceder si hay datos después de limpiar nulos
+                        def safe_coords(x):
+                            try: return obtener_coords(x)
+                            except Exception as e_coords:
+                                print(f"Error en geocoding para '{x}': {e_coords}")
+                                return None
+                        st.session_state.data["coords"] = st.session_state.data["direccion_corregida"].apply(safe_coords)
+
+                        # 4. Filtrar filas sin coordenadas VÁLIDAS
+                        original_rows = len(st.session_state.data)
+                        # dropna en 'coords' es seguro porque la creamos arriba
+                        st.session_state.data = st.session_state.data.dropna(subset=["coords"])
+                        found_rows = len(st.session_state.data)
+                        st.success(f"Se encontraron coordenadas para {found_rows} de {original_rows} direcciones procesadas.")
+                        print(f"Coordenadas encontradas: {found_rows}/{original_rows}") # Log
+                    else:
+                         st.warning("No quedaron direcciones válidas después de limpiar nulos en 'direccion_corregida'.")
+                         st.session_state.data["coords"] = None # Asegurar que la columna existe aunque vacía
+
             else:
                 st.warning("No se pudo proceder a la geocodificación porque falta la columna 'direccion_corregida'.")
-                st.session_state.data["coords"] = None # Asegurar que la columna existe aunque vacía si falla antes
+                st.session_state.data["coords"] = None # Asegurar que la columna existe aunque vacía
 
 
-            if "coords" in st.session_state.data.columns and not st.session_state.data["coords"].isnull().all(): # Chequear si hay *alguna* coordenada
-                # 5. Crear el mapa
+            # 5. Crear el mapa (solo si hay coordenadas válidas)
+            if "coords" in st.session_state.data.columns and not st.session_state.data.empty and not st.session_state.data["coords"].isnull().all():
                 print("--- Creando Mapa Folium (CSV)... ---") # Log
-                # Calcular centroide aproximado o usar uno fijo
-                coords_list = st.session_state.data['coords'].tolist()
+                coords_list = st.session_state.data['coords'].tolist() # Lista de tuplas (lat, lon)
                 if coords_list:
-                    avg_lat = sum(c[0] for c in coords_list) / len(coords_list)
-                    avg_lon = sum(c[1] for c in coords_list) / len(coords_list)
-                    map_center = [avg_lat, avg_lon]
+                     # Calcular centroide de forma segura
+                    valid_coords = [c for c in coords_list if isinstance(c, tuple) and len(c) == 2]
+                    if valid_coords:
+                        avg_lat = sum(c[0] for c in valid_coords) / len(valid_coords)
+                        avg_lon = sum(c[1] for c in valid_coords) / len(valid_coords)
+                        map_center = [avg_lat, avg_lon]
+                    else:
+                         map_center = [-33.38, -70.65] # Centro fijo si no hay coords válidas
                 else:
                     map_center = [-33.38, -70.65] # Centro fijo de Conchalí
 
@@ -288,42 +337,42 @@ if usar_csv_button:
                 coords_agregadas = 0
                 tipos_en_mapa = set()
 
+                # Iterar sobre filas que SÍ tienen coordenadas válidas
                 for i, row in st.session_state.data.iterrows():
                     try:
-                        if pd.notna(row["coords"]): # Doble chequeo
-                            tipo = str(row.get("Que es", "DESCONOCIDO")).upper() # Usar .get() por seguridad
-                            marker_color = dynamic_color_map.get(tipo, DEFAULT_ASSIGN_COLOR)
-                            tipos_en_mapa.add(tipo)
-                            # Asegurarse que las columnas existen antes de accederlas
-                            popup_text = f"<b>Tipo:</b> {tipo.capitalize()}<br>"
-                            if "direccion_corregida" in row: popup_text += f"<b>Corregida:</b> {row['direccion_corregida']}<br>"
-                            if "Direccion" in row: popup_text += f"<b>Original:</b> {row['Direccion']}"
+                        # No necesitamos chequear pd.notna(row["coords"]) porque ya filtramos con dropna
+                        # Usar siempre 'Que es' y 'Direccion' / 'direccion_corregida'
+                        tipo = str(row.get("Que es", "DESCONOCIDO")).upper() # Usar .get() por seguridad
+                        marker_color = dynamic_color_map.get(tipo, DEFAULT_ASSIGN_COLOR)
+                        tipos_en_mapa.add(tipo)
 
-                            tooltip_text = row.get('direccion_corregida', 'Ubicación') + f" ({tipo.capitalize()})"
+                        popup_text = f"<b>Tipo:</b> {tipo.capitalize()}<br>"
+                        if "direccion_corregida" in row and pd.notna(row['direccion_corregida']):
+                             popup_text += f"<b>Corregida:</b> {row['direccion_corregida']}<br>"
+                        if "Direccion" in row and pd.notna(row['Direccion']):
+                             popup_text += f"<b>Original:</b> {row['Direccion']}"
 
-                            # print(f"DEBUG MARKER: Tipo='{tipo}', Color='{marker_color}'") # Log opcional marcador
+                        tooltip_text = row.get('direccion_corregida', 'Ubicación') + f" ({tipo.capitalize()})"
 
-                            folium.Marker(
-                                location=row["coords"],
-                                popup=folium.Popup(popup_text, max_width=300),
-                                tooltip=tooltip_text,
-                                icon=folium.Icon(color=marker_color, icon='info-sign')
-                            ).add_to(mapa_obj)
-                            coords_agregadas += 1
+                        folium.Marker(
+                            location=row["coords"],
+                            popup=folium.Popup(popup_text, max_width=300),
+                            tooltip=tooltip_text,
+                            icon=folium.Icon(color=marker_color, icon='info-sign')
+                        ).add_to(mapa_obj)
+                        coords_agregadas += 1
                     except Exception as marker_err:
-                        st.warning(f"No se pudo añadir marcador para fila {i}: {marker_err}")
+                        st.warning(f"No se pudo añadir marcador para fila {i} ({row.get('direccion_corregida','N/A')}): {marker_err}")
 
                 if coords_agregadas > 0:
                     # (Añadir Leyenda)
                     legend_html = """
                         <div style="position: fixed; bottom: 50px; left: 10px; width: 180px; height: auto; max-height: 250px; border:2px solid grey; z-index:9999; font-size:12px; background-color:rgba(255, 255, 255, 0.9); overflow-y: auto; padding: 10px; border-radius: 5px;">
                         <b style="font-size: 14px;">Leyenda de Tipos</b><br> """
-                    colores_usados_para_leyenda = {}
                     # Usar el dynamic_color_map que generamos, priorizando los tipos que sí están en el mapa
                     tipos_relevantes = sorted([t for t in dynamic_color_map.keys() if t in tipos_en_mapa])
                     for tipo_leg in tipos_relevantes:
                          color_leg = dynamic_color_map.get(tipo_leg, DEFAULT_ASSIGN_COLOR)
-                         # No necesitamos checkear colores_usados_para_leyenda si el mapeo es único por tipo
                          legend_html += f'<i style="background:{color_leg}; border-radius:50%; width: 12px; height: 12px; display: inline-block; margin-right: 6px; border: 1px solid #CCC;"></i>{tipo_leg.capitalize()}<br>'
 
                     legend_html += "</div>"
@@ -331,22 +380,28 @@ if usar_csv_button:
 
                     st.session_state.mapa_csv = mapa_obj
                     st.session_state.mostrar_mapa = 'csv'
-                    st.success(f"Mapa del CSV generado con {coords_agregadas} puntos.")
+                    # El mensaje de éxito ya se mostró antes al encontrar coordenadas
+                    # st.success(f"Mapa del CSV generado con {coords_agregadas} puntos.")
                     print("--- Mapa CSV Generado y Guardado en Sesión ---") # Log
                 else:
                     st.warning("No se agregaron puntos al mapa del CSV (aunque se encontraron algunas coordenadas).")
-                    st.session_state.mapa_csv = None
-            else:
-                st.warning("No se encontraron coordenadas válidas en el CSV.")
-                st.session_state.mapa_csv = None
+                    st.session_state.mapa_csv = None # Asegurar que no se muestre un mapa vacío
+                    if st.session_state.mostrar_mapa == 'csv': st.session_state.mostrar_mapa = None
+
+            # else: Casos cubiertos por mensajes anteriores (no se encontraron coords, faltaba columna, etc.)
+            #    st.warning("No se pudo generar el mapa porque no hay coordenadas válidas.")
+            #    st.session_state.mapa_csv = None # Asegurar estado limpio
+
         else:
-            st.error("No se cargaron datos del CSV o el archivo estaba vacío.")
-            st.session_state.data = None
+            # Mensaje si cargar_csv_predeterminado devolvió None o vacío
+            st.error("No se cargaron datos válidos del CSV.")
+            st.session_state.data = None # Asegurar estado limpio
             st.session_state.mapa_csv = None
+
     except Exception as e:
-        st.error(f"Error general al procesar el CSV: {str(e)}")
+        st.error(f"Error inesperado durante el procesamiento del CSV: {str(e)}")
         st.error(traceback.format_exc()) # Mostrar el stack trace completo para debug
-        st.session_state.data = None
+        st.session_state.data = None # Asegurar estado limpio
         st.session_state.mapa_csv = None
     print("--- Fin Procesamiento Botón CSV ---") # Log
 
@@ -354,6 +409,8 @@ if usar_csv_button:
 elif direccion_input: # Usar elif para evitar que se ejecute si se presionó el botón CSV
     print("--- Input Manual Detectado ---") # Log
     st.session_state.mapa_csv = None # Limpiar mapa CSV si se ingresa dirección manual
+    st.session_state.data = None # Limpiar datos CSV
+    st.session_state.mostrar_mapa = None # Resetear mapa a mostrar
     st.info(f"Procesando dirección manual: {direccion_input}")
 
     # --- Carga Perezosa de Calles ---
@@ -393,7 +450,7 @@ elif direccion_input: # Usar elif para evitar que se ejecute si se presionó el 
     else:
         st.warning("No se pudo obtener ubicación para la dirección corregida.")
         st.session_state.mapa_manual = None
-        if st.session_state.mostrar_mapa == 'manual': st.session_state.mostrar_mapa = None # Resetear si falla
+        # No es necesario resetear st.session_state.mostrar_mapa aquí, ya se reseteó al inicio del bloque elif
     print("--- Fin Procesamiento Manual ---") # Log
 
 
@@ -403,21 +460,24 @@ map_to_show = st.session_state.get("mostrar_mapa")
 csv_map_obj = st.session_state.get("mapa_csv")
 manual_map_obj = st.session_state.get("mapa_manual")
 
-print(f"--- Mostrando Mapa: {map_to_show} ---") # Log
+print(f"--- Decidiendo qué Mapa Mostrar: {map_to_show} ---") # Log
+# print(f"    mapa_csv existe: {csv_map_obj is not None}")
+# print(f"    mapa_manual existe: {manual_map_obj is not None}")
+
 
 if map_to_show == 'csv' and csv_map_obj:
     st.markdown("### 🗺️ Mapa CSV (Colores Dinámicos)")
-    # Ajustar tamaño si es necesario
-    st_folium(csv_map_obj, key="folium_map_csv_dynamic_color", width='100%', height=600, returned_objects=[])
+    st_folium(csv_map_obj, key="folium_map_csv_dynamic_color_v2", width='100%', height=600, returned_objects=[]) # Cambiar key por si acaso
 elif map_to_show == 'manual' and manual_map_obj:
     st.markdown("### 🗺️ Mapa Dirección Manual")
-    st_folium(manual_map_obj, key="folium_map_manual", width='100%', height=500, returned_objects=[])
+    st_folium(manual_map_obj, key="folium_map_manual_v2", width='100%', height=500, returned_objects=[]) # Cambiar key por si acaso
 else:
-    # Mostrar mensaje solo si no se ha intentado procesar nada aún o si falló explícitamente
+    # Mostrar mensaje solo si NO se ha presionado el botón Y NO se ha ingresado texto Y no hay mapa listo para mostrar
+    # O si se intentó procesar pero falló (map_to_show es None pero se intentó algo)
     if not usar_csv_button and not direccion_input and map_to_show is None:
         st.info("Ingresa una dirección o carga el CSV para ver el mapa aquí.")
-    elif map_to_show is None and (usar_csv_button or direccion_input):
-         # Si se intentó procesar pero map_to_show es None, es porque falló algo antes
-         st.warning("No se pudo generar el mapa. Revisa los mensajes de error anteriores.")
+    elif (usar_csv_button or direccion_input) and map_to_show is None:
+         # Si se intentó procesar pero map_to_show es None, es porque falló algo crítico antes de generar el mapa.
+         st.warning("No se pudo generar el mapa. Revisa los mensajes de error anteriores en la aplicación o la consola.")
 
 print("--- Script Finalizado ---") # Log
