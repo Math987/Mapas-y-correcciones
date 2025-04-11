@@ -20,7 +20,7 @@ print("--- Script Iniciado ---")
 
 # --- Constantes de Nombres de Columnas ---
 COLUMNA_DIRECCION_ORIGINAL = u'¿Dónde ocurre este problema? (Por favor indica la dirección lo más exacta posible, Calle, Numero y Comuna)' # Usar u'' para unicode explícito
-COLUMNA_TIPO_ORIGINAL = u'¿Qué tipo de problema estás reportando?' # Usar u'' para unicode explícito
+COLUMNA_TIPO_ORIGINAL = u' ¿Qué tipo de problema estás reportando? ' # Usar u'' para unicode explícito
 COLUMNA_DIRECCION_NUEVA = 'Direccion'
 
 # --- Paleta de Colores Base ---
