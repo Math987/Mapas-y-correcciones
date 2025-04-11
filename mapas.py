@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*- # Añadir encoding por si acaso con los nombres largos
 import streamlit as st
 import pandas as pd
 import requests
@@ -15,13 +16,12 @@ import traceback
 # --- Configuración de Página ---
 st.set_page_config(page_title="Mapa de Direcciones Corregidas", layout="wide")
 st.title("🗺️ Mapa de Direcciones Corregidas en Conchalí")
-print("--- Script Iniciado ---") # Log para ver inicio en consola
+print("--- Script Iniciado ---")
 
 # --- Constantes de Nombres de Columnas ---
-# Definir los nombres aquí para fácil referencia y evitar typos
-COLUMNA_DIRECCION_ORIGINAL = '¿Dónde ocurre este problema? (Por favor indica la dirección lo más exacta posible, Calle, Numero y Comuna)'
-COLUMNA_TIPO_ORIGINAL = '¿Qué tipo de problema estás reportando?'
-COLUMNA_DIRECCION_NUEVA = 'Direccion' # Nombre simplificado para la dirección
+COLUMNA_DIRECCION_ORIGINAL = u'¿Dónde ocurre este problema? (Por favor indica la dirección lo más exacta posible, Calle, Numero y Comuna)' # Usar u'' para unicode explícito
+COLUMNA_TIPO_ORIGINAL = u'¿Qué tipo de problema estás reportando?' # Usar u'' para unicode explícito
+COLUMNA_DIRECCION_NUEVA = 'Direccion'
 
 # --- Paleta de Colores Base ---
 BASE_COLOR_PALETTE = [
@@ -29,13 +29,13 @@ BASE_COLOR_PALETTE = [
     'darkgreen', 'pink', 'red', 'lightblue', 'darkpurple', 'beige'
 ]
 COLOR_DESCONOCIDO = 'lightgray'
-DEFAULT_ASSIGN_COLOR = 'black'
+DEFAULT_ASSIGN_COLOR = 'black' # Color si el tipo no se encuentra en el mapa
 
 # --- Funciones ---
 @st.cache_data
 def obtener_calles_conchali():
     """Obtiene la lista de calles oficiales de Conchalí desde una fuente web."""
-    print(">>> Ejecutando obtener_calles_conchali (o usando caché)...") # Log
+    print(">>> Ejecutando obtener_calles_conchali (o usando caché)...")
     url = "https://codigo-postal.co/chile/santiago/calles-de-conchali/"
     try:
         response = requests.get(url, timeout=10)
@@ -65,11 +65,11 @@ def normalizar(texto):
     """Normaliza el texto: quita acentos, convierte a mayúsculas, elimina no alfanuméricos (excepto espacios) y espacios extra."""
     try:
         texto = unidecode(str(texto)).upper()
-        texto = re.sub(r'[^\w\s0-9]', '', texto) # Permite letras, números, espacios y guión bajo
+        texto = re.sub(r'[^\w\s0-9]', '', texto)
         texto = re.sub(r'\s+', ' ', texto).strip()
         return texto
     except Exception as e:
-        return str(texto).upper().strip() # Fallback simple
+        return str(texto).upper().strip()
 
 def corregir_direccion(direccion_input, calles_df, umbral=80):
     """Intenta corregir el nombre de la calle usando fuzzy matching contra la lista oficial."""
@@ -108,7 +108,7 @@ def obtener_coords(direccion_corregida_completa):
     """Obtiene coordenadas (lat, lon) para una dirección en Conchalí usando Nominatim."""
     if not direccion_corregida_completa: return None
     direccion_query = f"{direccion_corregida_completa}, Conchalí, Región Metropolitana, Chile"
-    geolocator = Nominatim(user_agent=f"mapa_conchali_app_v7_{int(time.time())}", timeout=10)
+    geolocator = Nominatim(user_agent=f"mapa_conchali_app_v8_{int(time.time())}", timeout=10) # Incrementar versión agente
     try:
         location = geolocator.geocode(direccion_query, addressdetails=True)
         if location: return location.latitude, location.longitude
@@ -120,26 +120,22 @@ def obtener_coords(direccion_corregida_completa):
         st.error(f"Error geocodificación para '{direccion_query}': {e}")
         return None
 
-# --- VERSIÓN CORREGIDA: NO RENOMBRA COLUMNA TIPO ---
 def cargar_csv_predeterminado():
     """Carga los datos desde la URL, renombra columna de DIRECCIÓN y procesa columna de TIPO (nombre original)."""
-    print(">>> Cargando CSV...") # Log
+    print(">>> Cargando CSV...")
     url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSAitwliDu4GoT-HU2zXh4eFUDnky9o3M-B9PHHp7RbLWktH7vuHu1BMT3P5zqfVIHAkTptZ8VaZ-F7/pub?gid=1694829461&single=true&output=csv"
     try:
-        # Especificar dtype usando los nombres originales
         data = pd.read_csv(url, dtype={
             COLUMNA_DIRECCION_ORIGINAL: str,
             COLUMNA_TIPO_ORIGINAL: str
         })
         print("--- Columnas Originales Detectadas ---")
-        print(data.columns) # DEBUG
+        print(data.columns)
 
         # --- Procesar Columna Dirección ---
         if COLUMNA_DIRECCION_ORIGINAL in data.columns:
-            # Renombrar a COLUMNA_DIRECCION_NUEVA ('Direccion')
             data.rename(columns={COLUMNA_DIRECCION_ORIGINAL: COLUMNA_DIRECCION_NUEVA}, inplace=True)
-            print(f"Columna '{COLUMNA_DIRECCION_ORIGINAL}' renombrada a '{COLUMNA_DIRECCION_NUEVA}'")
-            # Limpiar espacios en la columna renombrada
+            print(f"Columna dirección renombrada a '{COLUMNA_DIRECCION_NUEVA}'")
             data[COLUMNA_DIRECCION_NUEVA] = data[COLUMNA_DIRECCION_NUEVA].str.strip()
         else:
             st.error(f"Error crítico: No se encontró la columna de dirección: '{COLUMNA_DIRECCION_ORIGINAL}'")
@@ -148,25 +144,27 @@ def cargar_csv_predeterminado():
         # --- Procesar Columna Tipo (USANDO NOMBRE ORIGINAL) ---
         if COLUMNA_TIPO_ORIGINAL in data.columns:
             print(f"Procesando columna de tipo: '{COLUMNA_TIPO_ORIGINAL}'...")
-            # Limpiar y estandarizar usando el nombre original
-            data[COLUMNA_TIPO_ORIGINAL] = data[COLUMNA_TIPO_ORIGINAL].fillna("DESCONOCIDO").astype(str).str.strip().str.upper()
-            data[COLUMNA_TIPO_ORIGINAL] = data[COLUMNA_TIPO_ORIGINAL].replace(r'^\s*$', 'DESCONOCIDO', regex=True)
+            # Asegurar que ANTES de usar fillna, etc. la columna sea de tipo string
+            data[COLUMNA_TIPO_ORIGINAL] = data[COLUMNA_TIPO_ORIGINAL].astype(str)
+            data[COLUMNA_TIPO_ORIGINAL] = data[COLUMNA_TIPO_ORIGINAL].fillna("DESCONOCIDO") # Fillna ahora debería funcionar
+            data[COLUMNA_TIPO_ORIGINAL] = data[COLUMNA_TIPO_ORIGINAL].str.strip().str.upper() # Aplicar strip y upper
+            data[COLUMNA_TIPO_ORIGINAL] = data[COLUMNA_TIPO_ORIGINAL].replace(r'^\s*$', 'DESCONOCIDO', regex=True) # Reemplazar vacíos post-strip
+            # Opcional: Ver valores únicos después de limpiar
+            # print("Valores únicos en columna tipo (limpios):")
+            # print(data[COLUMNA_TIPO_ORIGINAL].unique())
         else:
-            # Si falta, crearla con el nombre original y valor 'DESCONOCIDO'
             st.warning(f"Advertencia: No se encontró la columna de tipo: '{COLUMNA_TIPO_ORIGINAL}'. Se creará con valor 'DESCONOCIDO'.")
             data[COLUMNA_TIPO_ORIGINAL] = "DESCONOCIDO"
 
         print("--- Columnas Finales en DataFrame ---")
-        print(data.columns) # DEBUG: Verificar nombres finales
+        print(data.columns)
         print(f"<<< CSV Cargado y Procesado: {len(data)} filas.")
-        # El DataFrame devuelto contendrá COLUMNA_DIRECCION_NUEVA y COLUMNA_TIPO_ORIGINAL
         return data
 
     except Exception as e:
         st.error(f"Error general al cargar o procesar el CSV: {e}")
-        st.error(traceback.format_exc()) # Mostrar stack trace para más detalles
+        st.error(traceback.format_exc())
         return None
-# --- FIN VERSIÓN CORREGIDA ---
 
 # --- Inicialización del Estado de Sesión ---
 if "data" not in st.session_state: st.session_state.data = None
@@ -177,19 +175,17 @@ if "mostrar_mapa" not in st.session_state: st.session_state.mostrar_mapa = None
 # --- Widgets de Entrada ---
 direccion_input = st.text_input("Ingresa una dirección (ej: Tres Ote. 5317):", key="direccion_manual_key")
 usar_csv_button = st.button("Usar csv predeterminado")
-print("--- Widgets Definidos ---") # Log
+print("--- Widgets Definidos ---")
 
 # --- Lógica Principal ---
-
 if usar_csv_button:
-    print("--- Botón CSV Presionado ---") # Log
+    print("--- Botón CSV Presionado ---")
     st.session_state.mapa_manual = None
     st.session_state.mostrar_mapa = None
     st.session_state.data = None
     st.session_state.mapa_csv = None
     st.info("Procesando CSV predeterminado...")
 
-    # Carga de Calles
     print("--- Cargando Calles (CSV)... ---")
     calles_df = obtener_calles_conchali()
     if calles_df is None or calles_df.empty:
@@ -197,34 +193,39 @@ if usar_csv_button:
         st.stop()
 
     try:
-        # Cargar datos CSV (usando la función actualizada)
         data_cargada = cargar_csv_predeterminado()
 
         if data_cargada is not None and not data_cargada.empty:
             st.session_state.data = data_cargada
 
             # --- Generación Dinámica de Mapa de Colores ---
-            # Usar el nombre original de la columna de tipo
-            print("--- Generando Mapa de Colores Dinámico... ---") # Log
+            print("--- Generando Mapa de Colores Dinámico... ---")
             dynamic_color_map = {}
             if COLUMNA_TIPO_ORIGINAL in st.session_state.data.columns:
-                # Obtener valores únicos de la columna con el nombre original
+                # Asegurarse que los tipos únicos se obtienen DESPUÉS de la limpieza en cargar_csv
                 unique_types = sorted(list(st.session_state.data[COLUMNA_TIPO_ORIGINAL].unique()))
+                print(f"Tipos únicos encontrados para mapa de colores: {unique_types}") # DEBUG
                 palette_len = len(BASE_COLOR_PALETTE)
                 color_index = 0
+                # Asignar color DESCONOCIDO primero si existe
                 if "DESCONOCIDO" in unique_types:
                     dynamic_color_map["DESCONOCIDO"] = COLOR_DESCONOCIDO
+                # Asignar colores al resto
                 for utype in unique_types:
-                    if utype not in dynamic_color_map:
+                    if utype not in dynamic_color_map: # Evitar sobreescribir DESCONOCIDO
                         dynamic_color_map[utype] = BASE_COLOR_PALETTE[color_index % palette_len]
                         color_index += 1
-                print(f"Mapa de colores generado: {dynamic_color_map}")
+
+                # --- DEBUG: Imprimir el mapa de colores generado ---
+                print("--- Mapa de Colores Generado ---")
+                print(dynamic_color_map)
+                # --- FIN DEBUG ---
+
             else:
                 st.warning(f"Columna '{COLUMNA_TIPO_ORIGINAL}' no encontrada para generar mapa de colores.")
-                dynamic_color_map["DESCONOCIDO"] = COLOR_DESCONOCIDO
+                dynamic_color_map["DESCONOCIDO"] = COLOR_DESCONOCIDO # Default si falta la columna
 
             # --- Corregir direcciones ---
-            # Usar el nombre nuevo de la columna de dirección ('Direccion')
             print("--- Corrigiendo Direcciones (CSV)... ---")
             if COLUMNA_DIRECCION_NUEVA in st.session_state.data.columns:
                 st.session_state.data = st.session_state.data.dropna(subset=[COLUMNA_DIRECCION_NUEVA])
@@ -241,7 +242,6 @@ if usar_csv_button:
             # --- Mostrar tabla ---
             st.markdown("### Datos cargados y corregidos (CSV):")
             display_cols = []
-            # Usar el nombre nuevo para dirección y el original para tipo
             if COLUMNA_DIRECCION_NUEVA in st.session_state.data.columns: display_cols.append(COLUMNA_DIRECCION_NUEVA)
             if "direccion_corregida" in st.session_state.data.columns: display_cols.append("direccion_corregida")
             if COLUMNA_TIPO_ORIGINAL in st.session_state.data.columns: display_cols.append(COLUMNA_TIPO_ORIGINAL)
@@ -270,20 +270,23 @@ if usar_csv_button:
                         original_rows = len(st.session_state.data)
                         st.session_state.data = st.session_state.data.dropna(subset=["coords"])
                         found_rows = len(st.session_state.data)
-                        st.success(f"Se encontraron coordenadas para {found_rows} de {original_rows} direcciones procesadas.")
+                        if original_rows > 0: # Evitar división por cero si no había filas
+                            st.success(f"Se encontraron coordenadas para {found_rows} de {original_rows} direcciones procesadas.")
+                        else:
+                            st.info("No había direcciones válidas para geocodificar.")
                         print(f"Coordenadas encontradas: {found_rows}/{original_rows}")
                     else:
                          st.warning("No quedaron direcciones válidas después de limpiar nulos en 'direccion_corregida'.")
-                         st.session_state.data["coords"] = None # Columna existe pero vacía
+                         st.session_state.data["coords"] = None
             else:
                 st.warning("No se pudo proceder a la geocodificación (falta 'direccion_corregida').")
-                st.session_state.data["coords"] = None # Columna existe pero vacía
+                st.session_state.data["coords"] = None
 
             # --- Crear el mapa ---
             if "coords" in st.session_state.data.columns and not st.session_state.data.empty and not st.session_state.data["coords"].isnull().all():
                 print("--- Creando Mapa Folium (CSV)... ---")
                 coords_list = st.session_state.data['coords'].tolist()
-                map_center = [-33.38, -70.65] # Default center
+                map_center = [-33.38, -70.65]
                 if coords_list:
                     valid_coords = [c for c in coords_list if isinstance(c, tuple) and len(c) == 2]
                     if valid_coords:
@@ -295,18 +298,25 @@ if usar_csv_button:
                 coords_agregadas = 0
                 tipos_en_mapa = set()
 
+                print("--- Añadiendo Marcadores al Mapa (DEBUG primeras 5 filas) ---") # DEBUG
                 for i, row in st.session_state.data.iterrows():
                     try:
-                        # Obtener tipo usando el NOMBRE ORIGINAL de la columna
-                        tipo = str(row.get(COLUMNA_TIPO_ORIGINAL, "DESCONOCIDO")).upper()
-                        marker_color = dynamic_color_map.get(tipo, DEFAULT_ASSIGN_COLOR)
-                        tipos_en_mapa.add(tipo)
+                        # Obtener tipo usando el NOMBRE ORIGINAL y estandarizar IGUAL que al crear el mapa de color
+                        tipo = str(row.get(COLUMNA_TIPO_ORIGINAL, "DESCONOCIDO")).strip().upper()
+                        if tipo == '': tipo = "DESCONOCIDO" # Asegurar que strings vacíos post-strip se traten como DESCONOCIDO
 
-                        # Construir popup usando nombres nuevos/generados y el original para tipo
+                        # Buscar color en el mapa generado
+                        marker_color = dynamic_color_map.get(tipo, DEFAULT_ASSIGN_COLOR)
+                        tipos_en_mapa.add(tipo) # Añadir tipo REAL encontrado para la leyenda
+
+                        # --- DEBUG PRINT dentro del loop ---
+                        if i < 5 or i % 50 == 0: # Imprimir para las primeras 5 y luego cada 50
+                             print(f"Row {i}: Tipo='{tipo}', Color Lookup='{marker_color}' (Tipo existe en mapa? {tipo in dynamic_color_map})")
+                        # --- FIN DEBUG PRINT ---
+
                         popup_text = f"<b>Tipo:</b> {tipo.capitalize()}<br>"
                         if "direccion_corregida" in row and pd.notna(row['direccion_corregida']):
                              popup_text += f"<b>Corregida:</b> {row['direccion_corregida']}<br>"
-                        # Acceder a la dirección original usando el NOMBRE NUEVO 'Direccion'
                         if COLUMNA_DIRECCION_NUEVA in row and pd.notna(row[COLUMNA_DIRECCION_NUEVA]):
                              popup_text += f"<b>Original:</b> {row[COLUMNA_DIRECCION_NUEVA]}"
 
@@ -320,16 +330,20 @@ if usar_csv_button:
                         ).add_to(mapa_obj)
                         coords_agregadas += 1
                     except Exception as marker_err:
-                        st.warning(f"No se pudo añadir marcador para fila {i}: {marker_err}")
+                        st.warning(f"No se pudo añadir marcador para fila {i}: {marker_err} - Tipo problemático: '{row.get(COLUMNA_TIPO_ORIGINAL, 'N/A')}'")
+
 
                 if coords_agregadas > 0:
-                    # Leyenda (usa los tipos obtenidos de la columna original)
+                    # Leyenda
                     legend_html = """
                         <div style="position: fixed; bottom: 50px; left: 10px; width: 180px; height: auto; max-height: 250px; border:2px solid grey; z-index:9999; font-size:12px; background-color:rgba(255, 255, 255, 0.9); overflow-y: auto; padding: 10px; border-radius: 5px;">
                         <b style="font-size: 14px;">Leyenda de Tipos</b><br> """
-                    tipos_relevantes = sorted([t for t in dynamic_color_map.keys() if t in tipos_en_mapa])
-                    for tipo_leg in tipos_relevantes:
+                    # Usar dynamic_color_map para la leyenda, mostrando solo los tipos REALMENTE en el mapa
+                    tipos_relevantes_leyenda = sorted([t for t in dynamic_color_map.keys() if t in tipos_en_mapa])
+                    print(f"--- Tipos para la leyenda: {tipos_relevantes_leyenda} ---") # DEBUG
+                    for tipo_leg in tipos_relevantes_leyenda:
                          color_leg = dynamic_color_map.get(tipo_leg, DEFAULT_ASSIGN_COLOR)
+                         # Evitar duplicados si DESCONOCIDO fue añadido explícitamente y también existe en los datos
                          legend_html += f'<i style="background:{color_leg}; border-radius:50%; width: 12px; height: 12px; display: inline-block; margin-right: 6px; border: 1px solid #CCC;"></i>{tipo_leg.capitalize()}<br>'
                     legend_html += "</div>"
                     mapa_obj.get_root().html.add_child(folium.Element(legend_html))
@@ -359,7 +373,7 @@ if usar_csv_button:
 
 # --- Lógica Dirección Manual ---
 elif direccion_input:
-    print("--- Input Manual Detectado ---") # Log
+    print("--- Input Manual Detectado ---")
     st.session_state.mapa_csv = None
     st.session_state.data = None
     st.session_state.mostrar_mapa = None
@@ -410,10 +424,10 @@ print(f"--- Decidiendo qué Mapa Mostrar: {map_to_show} ---")
 
 if map_to_show == 'csv' and csv_map_obj:
     st.markdown("### 🗺️ Mapa CSV")
-    st_folium(csv_map_obj, key="folium_map_csv_v3", width='100%', height=600, returned_objects=[])
+    st_folium(csv_map_obj, key="folium_map_csv_v4", width='100%', height=600, returned_objects=[]) # Nueva key
 elif map_to_show == 'manual' and manual_map_obj:
     st.markdown("### 🗺️ Mapa Dirección Manual")
-    st_folium(manual_map_obj, key="folium_map_manual_v3", width='100%', height=500, returned_objects=[])
+    st_folium(manual_map_obj, key="folium_map_manual_v4", width='100%', height=500, returned_objects=[]) # Nueva key
 else:
     if not usar_csv_button and not direccion_input and map_to_show is None:
         st.info("Ingresa una dirección o carga el CSV para ver el mapa aquí.")
