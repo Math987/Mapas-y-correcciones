@@ -15,7 +15,7 @@ import traceback
 
 # --- Configuración de Página ---
 st.set_page_config(page_title="Mapa de Direcciones Corregidas", layout="wide")
-st.title("🗺️ Mapa de Direcciones Corregidas en Conchalí")
+st.title("🗺️ Geo gestión Conchal")
 print("--- Script Iniciado ---")
 
 # --- Constantes de Nombres de Columnas (Definidos SIN espacios extra) ---
